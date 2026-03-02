@@ -24,24 +24,29 @@ nt2-nav/
     ├── nla-ego-version.jsx # Egocentric condition (full experiment logic)
     └── nla-allo-version.jsx# Allocentric condition (full experiment logic)
 
+
+```
 Development
-
-Install dependencies:
-
+Install dependencies
+```bash
 npm install
+```
 
-Run locally:
-
+Run locally
+```bash
 npm run dev
+```
 
-Build for production:
-
+Build for production
+```bash
 npm run build
+```
 
-Preview production build:
+Preview production build
+```
+bashnpm run preview
+```
 
-npm run preview
-Deployment Plan
 
 The platform will be deployed as:
 
@@ -50,6 +55,7 @@ A Progressive Web App (PWA) hosted over HTTPS
 Installable in standalone mode on mobile devices
 
 Integrated with Supabase for structured experimental data storage
+
 
 # React + Vite
 
