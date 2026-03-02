@@ -5,7 +5,7 @@ This project implements two experimental conditions (egocentric vs allocentric) 
 
 ---
 
-## Project Structure
+# Project Structure
 
 ```bash
 nt2-nav/
@@ -26,7 +26,7 @@ nt2-nav/
 
 
 ```
-Development
+# Development
 Install dependencies
 ```bash
 npm install
