@@ -1,9 +1,13 @@
-NT2 Navigation Research Platform
+# NT2 Navigation Research Platform
 
-A mobile-optimized navigation experiment platform built with React 19 + Vite.
+A mobile-optimized navigation experiment platform built with **React 19 + Vite**.  
 This project implements two experimental conditions (egocentric vs allocentric) and is designed for deployment as a Progressive Web App (PWA).
 
-Project Structure
+---
+
+## Project Structure
+
+```bash
 nt2-nav/
 ├── index.html              # Entry HTML
 ├── vite.config.js          # Vite configuration (host enabled)
@@ -19,21 +23,6 @@ nt2-nav/
     ├── haptics.js          # Shared vibration + audio feedback module
     ├── nla-ego-version.jsx # Egocentric condition (full experiment logic)
     └── nla-allo-version.jsx# Allocentric condition (full experiment logic)
-Features
-
-Two experimental conditions:
-
-Egocentric navigation
-
-Allocentric navigation
-
-Real-time interaction and response validation
-
-Mobile-first full-screen UI
-
-Haptic feedback (vibration) support
-
-Designed for PWA deployment (installable app-like experience)
 
 Development
 
@@ -54,18 +43,13 @@ Preview production build:
 npm run preview
 Deployment Plan
 
-The platform is intended to be deployed as:
+The platform will be deployed as:
 
 A Progressive Web App (PWA) hosted over HTTPS
 
-Installable on mobile devices in standalone mode
+Installable in standalone mode on mobile devices
 
-Integrated with Supabase for session and experimental data storage
-
-Research Purpose
-
-This platform is part of a navigation cognition study investigating differences between egocentric and allocentric spatial processing. The system is structured to support scalable deployment and structured data collection for experimental analysis.
-
+Integrated with Supabase for structured experimental data storage
 
 # React + Vite
 
