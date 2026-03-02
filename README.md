@@ -1,3 +1,72 @@
+NT2 Navigation Research Platform
+
+A mobile-optimized navigation experiment platform built with React 19 + Vite.
+This project implements two experimental conditions (egocentric vs allocentric) and is designed for deployment as a Progressive Web App (PWA).
+
+Project Structure
+nt2-nav/
+├── index.html              # Entry HTML
+├── vite.config.js          # Vite configuration (host enabled)
+├── package.json            # Dependencies: React 19 + Vite (rolldown)
+├── public/
+│   ├── ins.png             # Installation guidance image (phone posture)
+│   ├── rest.png            # Rest instruction image (look around)
+│   └── vite.svg
+└── src/
+    ├── main.jsx            # React entry point (renders <App />)
+    ├── index.css           # Global styles (reset + full-screen layout)
+    ├── App.jsx             # Condition selector (Ego / Allo)
+    ├── haptics.js          # Shared vibration + audio feedback module
+    ├── nla-ego-version.jsx # Egocentric condition (full experiment logic)
+    └── nla-allo-version.jsx# Allocentric condition (full experiment logic)
+Features
+
+Two experimental conditions:
+
+Egocentric navigation
+
+Allocentric navigation
+
+Real-time interaction and response validation
+
+Mobile-first full-screen UI
+
+Haptic feedback (vibration) support
+
+Designed for PWA deployment (installable app-like experience)
+
+Development
+
+Install dependencies:
+
+npm install
+
+Run locally:
+
+npm run dev
+
+Build for production:
+
+npm run build
+
+Preview production build:
+
+npm run preview
+Deployment Plan
+
+The platform is intended to be deployed as:
+
+A Progressive Web App (PWA) hosted over HTTPS
+
+Installable on mobile devices in standalone mode
+
+Integrated with Supabase for session and experimental data storage
+
+Research Purpose
+
+This platform is part of a navigation cognition study investigating differences between egocentric and allocentric spatial processing. The system is structured to support scalable deployment and structured data collection for experimental analysis.
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
