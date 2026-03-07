@@ -1,3 +1,62 @@
+# NT2 Navigation Research Platform
+
+A mobile-optimized navigation experiment platform built with **React 19 + Vite**.  
+This project implements two experimental conditions (egocentric vs allocentric) and is designed for deployment as a Progressive Web App (PWA).
+
+---
+
+# Project Structure
+
+```bash
+nt2-nav/
+├── index.html              # Entry HTML
+├── vite.config.js          # Vite configuration (host enabled)
+├── package.json            # Dependencies: React 19 + Vite (rolldown)
+├── public/
+│   ├── ins.png             # Installation guidance image (phone posture)
+│   ├── rest.png            # Rest instruction image (look around)
+│   └── vite.svg
+└── src/
+    ├── main.jsx            # React entry point (renders <App />)
+    ├── index.css           # Global styles (reset + full-screen layout)
+    ├── App.jsx             # Condition selector (Ego / Allo)
+    ├── haptics.js          # Shared vibration + audio feedback module
+    ├── nla-ego-version.jsx # Egocentric condition (full experiment logic)
+    └── nla-allo-version.jsx# Allocentric condition (full experiment logic)
+
+
+```
+# Development
+Install dependencies
+```bash
+npm install
+```
+
+Run locally
+```bash
+npm run dev
+```
+
+Build for production
+```bash
+npm run build
+```
+
+Preview production build
+```
+bashnpm run preview
+```
+
+
+The platform will be deployed as:
+
+A Progressive Web App (PWA) hosted over HTTPS
+
+Installable in standalone mode on mobile devices
+
+Integrated with Supabase for structured experimental data storage
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
