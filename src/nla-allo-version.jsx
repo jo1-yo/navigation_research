@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { feedbackCorrect, feedbackWrong } from './haptics.js';
+import { upsertParticipant, createSession, createOrientationBlock, updateOrientationBlock, createTrial, completeSession } from './lib/db.js';
 
 const playCorrectFeedback = feedbackCorrect;
 const playIncorrectFeedback = feedbackWrong;
@@ -42,12 +43,14 @@ const useDeviceOrientation = () => {
       try {
         const response = await DeviceOrientationEvent.requestPermission();
         setPermission(response);
+        return response === 'granted';
       } catch (err) {
         setPermission('denied');
+        return false;
       }
     } else {
-      // Non-iOS browsers don't require explicit permission
       setPermission('granted');
+      return true;
     }
   }, []);
 
@@ -303,32 +306,76 @@ const InstructionsScreen = ({ onContinue }) => (
 );
 
 // Permissions Screen
-const PermissionsScreen = ({ onContinue, onRequestPermission }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', padding: '60px 30px', minHeight: '100%' }}>
-    <h1 style={{ fontSize: '24px', fontWeight: 600, marginBottom: 32 }}>Enable Permissions</h1>
-    
-    {[
-      { icon: '📍', title: 'Location Services', desc: 'To determine absolute directions' },
-      { icon: '🧭', title: 'Device Orientation', desc: 'To detect which direction you\'re facing' },
-      { icon: '🔔', title: 'Notifications', desc: 'To receive training reminders' }
-    ].map((item, i) => (
-      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
-        <span style={{ fontSize: '20px' }}>{item.icon}</span>
-        <div>
-          <p style={{ fontWeight: 500, marginBottom: 4 }}>{item.title}</p>
-          <p style={{ fontSize: '14px', color: '#666' }}>{item.desc}</p>
-        </div>
+const PermissionsScreen = ({ onContinue, onRequestPermission }) => {
+  const [permissionStatus, setPermissionStatus] = useState('pending');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleEnable = async () => {
+    const success = await onRequestPermission();
+    if (success) {
+      setPermissionStatus('granted');
+      setTimeout(() => onContinue(), 500);
+    } else {
+      setPermissionStatus('denied');
+      setErrorMsg('Permission denied. Please enable motion sensors in your device settings.');
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '40px 30px', minHeight: '100%' }}>
+      <h1 style={{ fontSize: '24px', fontWeight: 600, marginBottom: 24 }}>Enable Permissions</h1>
+      
+      <div style={{ 
+        background: '#fff3cd', border: '1px solid #ffc107', 
+        borderRadius: '12px', padding: '16px', marginBottom: 24 
+      }}>
+        <p style={{ fontSize: '14px', color: '#856404', marginBottom: 8 }}>
+          <strong>Important for iOS users:</strong>
+        </p>
+        <p style={{ fontSize: '13px', color: '#856404' }}>
+          You must tap the "Enable" button below to grant compass access. This cannot be done automatically.
+        </p>
       </div>
-    ))}
-    
-    <div style={{ flex: 1 }} />
-    
-    <button onClick={() => { onRequestPermission(); onContinue(); }} style={{
-      width: '100%', padding: '16px', background: '#1a1a2e', color: 'white',
-      border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 500, cursor: 'pointer'
-    }}>Enable</button>
-  </div>
-);
+      
+      {[
+        { icon: '🧭', title: 'Device Orientation (Required)', desc: 'To detect which direction you\'re facing' },
+        { icon: '📍', title: 'Location Services', desc: 'To determine absolute directions' },
+        { icon: '🔔', title: 'Notifications', desc: 'To receive training reminders' }
+      ].map((item, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+          <span style={{ fontSize: '20px' }}>{item.icon}</span>
+          <div>
+            <p style={{ fontWeight: 500, marginBottom: 4 }}>{item.title}</p>
+            <p style={{ fontSize: '13px', color: '#666' }}>{item.desc}</p>
+          </div>
+        </div>
+      ))}
+      
+      {permissionStatus === 'granted' && (
+        <div style={{ background: '#d4edda', border: '1px solid #28a745', borderRadius: '8px', padding: '12px', marginTop: 16 }}>
+          <p style={{ color: '#155724', fontSize: '14px' }}>Permissions granted! Redirecting...</p>
+        </div>
+      )}
+      
+      {permissionStatus === 'denied' && (
+        <div style={{ background: '#f8d7da', border: '1px solid #dc3545', borderRadius: '8px', padding: '12px', marginTop: 16 }}>
+          <p style={{ color: '#721c24', fontSize: '14px' }}>{errorMsg}</p>
+        </div>
+      )}
+      
+      <div style={{ flex: 1 }} />
+      
+      <button onClick={handleEnable} style={{
+        width: '100%', padding: '16px', background: '#1a1a2e', color: 'white',
+        border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 500, cursor: 'pointer'
+      }}>Enable Compass Access</button>
+      
+      <p style={{ textAlign: 'center', fontSize: '12px', color: '#888', marginTop: 12 }}>
+        Tap the button above to enable device orientation
+      </p>
+    </div>
+  );
+};
 
 // Training Tab (Dashboard)
 const TrainingTab = ({ onStartSession, sessionsToday, participantCode, trainingHistory }) => {
@@ -597,7 +644,7 @@ const RestScreen = ({ onContinue }) => (
       style={{ width: '80%', maxWidth: 260, borderRadius: '12px', marginBottom: 20, objectFit: 'contain' }}
     />
     <p style={{ fontSize: '16px', lineHeight: 1.7, color: '#333', textAlign: 'center', marginBottom: 12, maxWidth: 320 }}>
-      Please take a moment to look around you. Observe the buildings and landmarks in your surroundings.
+      Please take a moment to look around and observe the environment around you.
     </p>
     <p style={{ fontSize: '14px', color: '#888', textAlign: 'center', marginBottom: 32, maxWidth: 300 }}>
       When you are ready, tap the button below to continue.
@@ -824,6 +871,12 @@ export default function NavigationLearningAppALLO() {
   ]);
   
   const { heading: deviceHeading, requestPermission } = useDeviceOrientation();
+
+  // Supabase IDs (refs so they don't cause re-renders)
+  const dbParticipantId = useRef(null);
+  const dbSessionId = useRef(null);
+  const dbBlockId = useRef(null);
+  const blockStartTime = useRef(null);
   
   // 6 orientation phases × 2 trials = 12 total; pick 6 UNIQUE directions
   const [targetDirections] = useState(() => {
@@ -935,6 +988,10 @@ export default function NavigationLearningAppALLO() {
     setIsTrialTimeout(false);
     setIsPaused(false);
     setScreen('orientation');
+    if (dbParticipantId.current) {
+      createSession({ participantId: dbParticipantId.current, version: 'allo', sessionType: mode })
+        .then(s => { if (s) dbSessionId.current = s.id; });
+    }
   };
 
   const handleStartSession = () => startSession('training');
@@ -942,6 +999,24 @@ export default function NavigationLearningAppALLO() {
   
   const handleOrientationCalibrated = () => {
     setScreen('trial');
+    blockStartTime.current = Date.now();
+    if (dbSessionId.current) {
+      createOrientationBlock({
+        sessionId: dbSessionId.current,
+        blockOrder: orientationPhase,
+        targetDirection: targetDirections[orientationPhase],
+      }).then(b => {
+        if (b) {
+          dbBlockId.current = b.id;
+          updateOrientationBlock(b.id, {
+            finalFacingDirection: deviceHeading,
+            orientationErrorDeg: deviceHeading !== null
+              ? Math.abs(((targetDirections[orientationPhase] - deviceHeading + 540) % 360) - 180)
+              : null,
+          });
+        }
+      });
+    }
   };
   
   const handleRestDone = () => { setScreen('orientation'); };
@@ -978,9 +1053,40 @@ export default function NavigationLearningAppALLO() {
       setScreen('results');
     }
   }, [trialPhase, orientationPhase, sessionData]);
+
+  // Upload session summary when results screen is shown (sessionData is guaranteed final)
+  useEffect(() => {
+    if (screen === 'results' && dbSessionId.current) {
+      const validTimes = sessionData.responses.map(r => r.reactionTime).filter(t => t < 15000);
+      completeSession(dbSessionId.current, {
+        totalCorrect: sessionData.correctCount,
+        totalTrials: 12,
+        avgReactionTimeMs: validTimes.length > 0 ? Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length) : 0,
+      });
+    }
+  }, [screen, sessionData]);
   
   const handleTrialResponse = useCallback((response, reactionTime) => {
-    if (response === null) {
+    const isTimeout = response === null;
+    const isCorrect = isTimeout ? false : response === currentShapeConfig.correctAnswer;
+
+    // Upload trial to Supabase (fire-and-forget)
+    if (dbBlockId.current) {
+      createTrial({
+        blockId: dbBlockId.current,
+        trialIndex: trialPhase,
+        layout: currentShapeConfig.layout,
+        squareFirst: currentShapeConfig.squareFirst,
+        correctAnswer: currentShapeConfig.correctAnswer,
+        participantResponse: response,
+        accuracy: isCorrect,
+        reactionTimeMs: reactionTime,
+        timeout: isTimeout,
+        optionsShown: currentShapeConfig.options,
+      });
+    }
+
+    if (isTimeout) {
       setIsTrialTimeout(true);
       setTimeout(() => {
         setIsTrialTimeout(false);
@@ -989,14 +1095,13 @@ export default function NavigationLearningAppALLO() {
       return;
     }
     
-    const isCorrect = response === currentShapeConfig.correctAnswer;
     setSessionData(prev => ({
       responses: [...prev.responses, { response, correctAnswer: currentShapeConfig.correctAnswer, isCorrect, reactionTime }],
       correctCount: prev.correctCount + (isCorrect ? 1 : 0)
     }));
     
     setTimeout(() => advanceTrialOrOrientation(), 100);
-  }, [currentShapeConfig, advanceTrialOrOrientation]);
+  }, [currentShapeConfig, advanceTrialOrOrientation, trialPhase]);
   
   const avgTime = sessionData.responses.length > 0 
     ? Math.round(sessionData.responses.filter(r => r.reactionTime < 15000).reduce((a, b) => a + b.reactionTime, 0) / sessionData.responses.filter(r => r.reactionTime < 15000).length)
@@ -1009,7 +1114,14 @@ export default function NavigationLearningAppALLO() {
       fontFamily: '"DM Sans", -apple-system, sans-serif', position: 'relative'
     }}>
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
-        {screen === 'login' && <LoginScreen onLogin={(data) => { setParticipantData(data); setScreen('instructions'); }} />}
+        {screen === 'login' && <LoginScreen onLogin={(data) => {
+          setParticipantData(data);
+          setScreen('instructions');
+          upsertParticipant(data.participantCode, {
+            deviceOs: navigator.userAgent,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).then(p => { if (p) dbParticipantId.current = p.id; });
+        }} />}
         
         {screen === 'instructions' && <InstructionsScreen onContinue={() => setScreen('permissions')} />}
         

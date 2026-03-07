@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { feedbackCorrect, feedbackWrong } from './haptics.js';
+import { upsertParticipant, createSession, createOrientationBlock, updateOrientationBlock, createTrial, completeSession } from './lib/db.js';
 
 const playCorrectFeedback = feedbackCorrect;
 const playIncorrectFeedback = feedbackWrong;
@@ -589,7 +590,7 @@ const RestScreen = ({ onContinue }) => (
       style={{ width: '80%', maxWidth: 260, borderRadius: '12px', marginBottom: 20, objectFit: 'contain' }}
     />
     <p style={{ fontSize: '16px', lineHeight: 1.7, color: '#333', textAlign: 'center', marginBottom: 12, maxWidth: 320 }}>
-      Please take a moment to look around you. Observe the buildings and landmarks in your surroundings.
+      Please take a moment to look around and observe the environment around you.
     </p>
     <p style={{ fontSize: '14px', color: '#888', textAlign: 'center', marginBottom: 32, maxWidth: 300 }}>
       When you are ready, tap the button below to continue.
@@ -756,6 +757,11 @@ export default function NavigationLearningAppEGO() {
   
   const { heading: deviceHeading, requestPermission } = useDeviceOrientation();
   const isCompassWorking = deviceHeading !== null;
+
+  // Supabase IDs (refs so they don't cause re-renders)
+  const dbParticipantId = useRef(null);
+  const dbSessionId = useRef(null);
+  const dbBlockId = useRef(null);
   
   // 6 orientation phases × 2 trials = 12 total
   const [targetDirections] = useState(() => {
@@ -808,12 +814,35 @@ export default function NavigationLearningAppEGO() {
     setSessionData({ responses: [], correctCount: 0 });
     setAllTrialBlocks(generateAllTrials());
     setIsTrialTimeout(false); setIsPaused(false); setScreen('orientation');
+    if (dbParticipantId.current) {
+      createSession({ participantId: dbParticipantId.current, version: 'ego', sessionType: mode })
+        .then(s => { if (s) dbSessionId.current = s.id; });
+    }
   };
 
   const handleStartSession = () => startSession('training');
   const handleStartTest = () => startSession('testing');
 
-  const handleOrientationCalibrated = () => { setScreen('trial'); };
+  const handleOrientationCalibrated = () => {
+    setScreen('trial');
+    if (dbSessionId.current) {
+      createOrientationBlock({
+        sessionId: dbSessionId.current,
+        blockOrder: orientationPhase,
+        targetDirection: targetDirections[orientationPhase],
+      }).then(b => {
+        if (b) {
+          dbBlockId.current = b.id;
+          updateOrientationBlock(b.id, {
+            finalFacingDirection: deviceHeading,
+            orientationErrorDeg: deviceHeading !== null
+              ? Math.abs(((targetDirections[orientationPhase] - deviceHeading + 540) % 360) - 180)
+              : null,
+          });
+        }
+      });
+    }
+  };
   const handleRestDone = () => { setScreen('orientation'); };
 
   const advanceTrialOrOrientation = useCallback(() => {
@@ -836,20 +865,56 @@ export default function NavigationLearningAppEGO() {
       setScreen('results');
     }
   }, [trialPhase, orientationPhase, sessionData]);
+
+  // Upload session summary when results screen is shown (sessionData is guaranteed final)
+  useEffect(() => {
+    if (screen === 'results' && dbSessionId.current) {
+      const validTimes = sessionData.responses.map(r => r.reactionTime).filter(t => t < 15000);
+      completeSession(dbSessionId.current, {
+        totalCorrect: sessionData.correctCount,
+        totalTrials: 12,
+        avgReactionTimeMs: validTimes.length > 0 ? Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length) : 0,
+      });
+    }
+  }, [screen, sessionData]);
   
   const handleTrialResponse = useCallback((response, reactionTime) => {
-    if (response === null) { setIsTrialTimeout(true); setTimeout(() => { setIsTrialTimeout(false); advanceTrialOrOrientation(); }, 2500); return; }
-    const isCorrect = response === currentShapeConfig.correctAnswer;
+    const isTimeout = response === null;
+    const isCorrect = isTimeout ? false : response === currentShapeConfig.correctAnswer;
+
+    if (dbBlockId.current) {
+      createTrial({
+        blockId: dbBlockId.current,
+        trialIndex: trialPhase,
+        layout: currentShapeConfig.layout,
+        squareFirst: currentShapeConfig.squareFirst,
+        correctAnswer: currentShapeConfig.correctAnswer,
+        participantResponse: response,
+        accuracy: isCorrect,
+        reactionTimeMs: reactionTime,
+        timeout: isTimeout,
+        optionsShown: currentShapeConfig.options,
+      });
+    }
+
+    if (isTimeout) { setIsTrialTimeout(true); setTimeout(() => { setIsTrialTimeout(false); advanceTrialOrOrientation(); }, 2500); return; }
     setSessionData(prev => ({ responses: [...prev.responses, { response, correctAnswer: currentShapeConfig.correctAnswer, isCorrect, reactionTime }], correctCount: prev.correctCount + (isCorrect ? 1 : 0) }));
     setTimeout(() => advanceTrialOrOrientation(), 100);
-  }, [currentShapeConfig, advanceTrialOrOrientation]);
+  }, [currentShapeConfig, advanceTrialOrOrientation, trialPhase]);
   
   const avgTime = sessionData.responses.length > 0 ? Math.round(sessionData.responses.filter(r => r.reactionTime < 15000).reduce((a, b) => a + b.reactionTime, 0) / sessionData.responses.filter(r => r.reactionTime < 15000).length) : 0;
   
   return (
     <div style={{ width: '100%', minHeight: '100dvh', margin: '0 auto', background: 'white', fontFamily: '"DM Sans", -apple-system, sans-serif', position: 'relative' }}>
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
-        {screen === 'login' && <LoginScreen onLogin={(data) => { setParticipantData(data); setScreen('instructions'); }} />}
+        {screen === 'login' && <LoginScreen onLogin={(data) => {
+          setParticipantData(data);
+          setScreen('instructions');
+          upsertParticipant(data.participantCode, {
+            deviceOs: navigator.userAgent,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).then(p => { if (p) dbParticipantId.current = p.id; });
+        }} />}
         {screen === 'instructions' && <InstructionsScreen onContinue={() => setScreen('permissions')} />}
         {screen === 'permissions' && <PermissionsScreen onContinue={() => setScreen('dashboard')} onRequestPermission={requestPermission} />}
         {screen === 'dashboard' && (
