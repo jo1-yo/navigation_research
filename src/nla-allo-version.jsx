@@ -38,6 +38,10 @@ const useDeviceOrientation = () => {
   }, []);
 
   const requestPermission = useCallback(async () => {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setPermission('denied');
+      return false;
+    }
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       try {
@@ -45,6 +49,7 @@ const useDeviceOrientation = () => {
         setPermission(response);
         return response === 'granted';
       } catch (err) {
+        console.warn('[DeviceOrientation] requestPermission failed:', err);
         setPermission('denied');
         return false;
       }
@@ -89,7 +94,7 @@ const Droplet = ({ mood = 'happy', size = 120 }) => {
 };
 
 // Navigation bar with pause button
-const NavBar = ({ showPause = false, onPause, isPaused = false }) => (
+const NavBar = ({ showPause = false, onPause, isPaused = false, onMenuPress, onProfilePress }) => (
   <div style={{
     display: 'flex',
     justifyContent: 'space-between',
@@ -97,10 +102,13 @@ const NavBar = ({ showPause = false, onPause, isPaused = false }) => (
     padding: '12px 20px',
     borderBottom: '1px solid #eee'
   }}>
-    <button style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>☰</button>
+    <button
+      onClick={onMenuPress}
+      style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}
+    >☰</button>
     <span style={{ fontFamily: '"DM Sans", sans-serif', fontWeight: 600, fontSize: '18px' }}>NLA</span>
     {showPause ? (
-      <button 
+      <button
         onClick={onPause}
         style={{
           background: isPaused ? '#4CAF50' : '#ff9800',
@@ -117,8 +125,64 @@ const NavBar = ({ showPause = false, onPause, isPaused = false }) => (
         }}
       >{isPaused ? '▶' : '⏸'}</button>
     ) : (
-      <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #4FC3F7, #29B6F6)' }} />
+      <button
+        onClick={onProfilePress}
+        style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #4FC3F7, #29B6F6)',
+          border: 'none', cursor: onProfilePress ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '15px'
+        }}
+      >👤</button>
     )}
+  </div>
+);
+
+// Version selector bottom sheet
+const VersionSelectorModal = ({ onSelect, onClose }) => (
+  <div style={{
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200,
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+  }} onClick={onClose}>
+    <div
+      style={{
+        background: 'white', borderRadius: '20px 20px 0 0', padding: '24px 24px 40px',
+        width: '100%', maxWidth: 500
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div style={{ width: 40, height: 4, borderRadius: 2, background: '#ddd', margin: '0 auto 20px' }} />
+      <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: 4, textAlign: 'center' }}>Switch Version</h3>
+      <p style={{ fontSize: '13px', color: '#888', marginBottom: 20, textAlign: 'center' }}>
+        Select which experiment version to load
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <button
+          onClick={() => onSelect('allo')}
+          style={{
+            padding: '16px', borderRadius: '12px', border: '2px solid #4FC3F7',
+            background: '#e3f7fd', fontSize: '16px', fontWeight: 600, cursor: 'pointer',
+            color: '#1a1a2e'
+          }}
+        >🔵 Allo (Allocentric)</button>
+        <button
+          onClick={() => onSelect('ego')}
+          style={{
+            padding: '16px', borderRadius: '12px', border: '2px solid #E67E22',
+            background: '#fef3e7', fontSize: '16px', fontWeight: 600, cursor: 'pointer',
+            color: '#1a1a2e'
+          }}
+        >🟠 Ego (Egocentric)</button>
+        <button
+          onClick={onClose}
+          style={{
+            padding: '14px', borderRadius: '12px', border: 'none',
+            background: '#f5f5f5', fontSize: '15px', cursor: 'pointer', color: '#888', marginTop: 4
+          }}
+        >Cancel</button>
+      </div>
+    </div>
   </div>
 );
 
@@ -309,21 +373,51 @@ const InstructionsScreen = ({ onContinue }) => (
 const PermissionsScreen = ({ onContinue, onRequestPermission }) => {
   const [permissionStatus, setPermissionStatus] = useState('pending');
   const [errorMsg, setErrorMsg] = useState('');
+  const isSecureContext =
+    typeof window !== 'undefined' && window.isSecureContext;
 
   const handleEnable = async () => {
+    if (!isSecureContext) {
+      setPermissionStatus('denied');
+      setErrorMsg(
+        'This page is not loaded over HTTPS. On iPhone Safari, compass access is blocked for http:// addresses (including LAN IPs). Use the https:// link from the dev server and accept the certificate warning once, or use Cloudflare Tunnel / deployed HTTPS.'
+      );
+      return;
+    }
     const success = await onRequestPermission();
     if (success) {
       setPermissionStatus('granted');
       setTimeout(() => onContinue(), 500);
     } else {
       setPermissionStatus('denied');
-      setErrorMsg('Permission denied. Please enable motion sensors in your device settings.');
+      setErrorMsg(
+        'Permission denied. If a system dialog appeared, tap Allow. You can also check Settings → Safari → Motion & Orientation Access, or site-specific settings under Safari’s (aA) menu for this site.'
+      );
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', padding: '40px 30px', minHeight: '100%' }}>
       <h1 style={{ fontSize: '24px', fontWeight: 600, marginBottom: 24 }}>Enable Permissions</h1>
+
+      {!isSecureContext && (
+        <div
+          style={{
+            background: '#f8d7da',
+            border: '1px solid #dc3545',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ fontSize: '14px', color: '#721c24', marginBottom: 8 }}>
+            <strong>HTTPS required on iPhone</strong>
+          </p>
+          <p style={{ fontSize: '13px', color: '#721c24', lineHeight: 1.5 }}>
+            You opened this app with <strong>http://</strong>. Safari will not grant compass/motion for that. In the terminal, use the <strong>https://</strong> Local and Network URLs (port 5173), open that on your phone, accept the self-signed certificate if asked, then tap Enable again.
+          </p>
+        </div>
+      )}
       
       <div style={{ 
         background: '#fff3cd', border: '1px solid #ffc107', 
@@ -550,7 +644,7 @@ const ProfileTab = ({ participantCode, totalPoints, currentStreak, totalSessions
 );
 
 // Orientation Screen
-const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused }) => {
+const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused, showDirection = false }) => {
   const [simulatedHeading, setSimulatedHeading] = useState(0);
   const currentHeading = deviceHeading !== null ? deviceHeading : simulatedHeading;
   
@@ -584,13 +678,16 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
           Place your phone flat on your palm. Face in the direction of the arrow.
         </p>
         
-        <div style={{
-          textAlign: 'center', marginBottom: 12, padding: '8px 16px',
-          background: '#f5f5f5', borderRadius: '8px', fontSize: '14px'
-        }}>
-          Your heading: <strong>{currentHeading}°</strong>
-          {deviceHeading === null && <span style={{ color: '#888' }}> (Use ← → keys or buttons)</span>}
-        </div>
+        {deviceHeading === null && (
+          <div style={{
+            textAlign: 'center', marginBottom: 12, padding: '8px 16px',
+            background: '#fff3e0', borderRadius: '8px', fontSize: '14px',
+            border: '1px solid #ff9800'
+          }}>
+            <span style={{ color: '#e65100' }}>⚠️ Simulation Mode</span>
+            <span style={{ color: '#888', fontSize: '12px', display: 'block' }}> Use ← → keys or buttons</span>
+          </div>
+        )}
         
         {/* Arrow */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -601,9 +698,15 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
             {isAligned && <circle cx="50" cy="50" r="48" fill="none" stroke="#4CAF50" strokeWidth="3" opacity="0.5" />}
           </svg>
           
-          <p style={{ fontSize: '14px', color: '#666', marginTop: 12 }}>
-            Target: <strong>{directionLabels[targetDirection]}</strong> ({targetDirection}°)
-          </p>
+          {showDirection ? (
+            <p style={{ fontSize: '15px', color: '#333', marginTop: 12, fontWeight: 600 }}>
+              Face <strong style={{ color: '#1a1a2e' }}>{directionLabels[targetDirection]}</strong>
+            </p>
+          ) : (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: 12 }}>
+              Rotate until the arrow points straight up
+            </p>
+          )}
         </div>
         
         {/* Rotation controls */}
@@ -657,7 +760,7 @@ const RestScreen = ({ onContinue }) => (
 );
 
 // Trial Screen
-const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused }) => {
+const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
   const [localShowFeedback, setLocalShowFeedback] = useState(false);
@@ -703,21 +806,22 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     
     const reactionTime = Date.now() - startTimeRef.current;
     const isCorrect = option === shapeConfig.correctAnswer;
-    if (isCorrect) playCorrectFeedback(); else playIncorrectFeedback();
+    if (showFeedback) {
+      if (isCorrect) playCorrectFeedback(); else playIncorrectFeedback();
+    }
     setSelectedAnswer(option);
     setLocalShowFeedback(true);
-    
-    setTimeout(() => onResponse(option, reactionTime), 3000);
+
+    setTimeout(() => onResponse(option, reactionTime), showFeedback ? 3000 : 300);
   };
-  
+
   const getButtonStyle = (option) => {
     const base = {
       padding: '16px 18px', border: '1px solid #ddd', borderRadius: '8px',
       fontSize: '17px', cursor: (localShowFeedback || selectedAnswer || isPaused) ? 'default' : 'pointer',
       background: 'white', fontWeight: 500, transition: 'all 0.2s ease'
     };
-    
-    if (localShowFeedback && selectedAnswer) {
+    if (showFeedback && localShowFeedback && selectedAnswer) {
       if (option === shapeConfig.correctAnswer) return { ...base, background: '#4CAF50', color: 'white', borderColor: '#4CAF50' };
       if (option === selectedAnswer && option !== shapeConfig.correctAnswer) return { ...base, background: '#f44336', color: 'white', borderColor: '#f44336' };
     }
@@ -846,7 +950,7 @@ const ResultsScreen = ({ correctCount, totalTrials, streak, avgTime, onBackToHom
 );
 
 // Main App
-export default function NavigationLearningAppALLO() {
+export default function NavigationLearningAppALLO({ onSwitchVersion }) {
   const [screen, setScreen] = useState('login');
   const [activeTab, setActiveTab] = useState('training');
   const [sessionMode, setSessionMode] = useState('training');
@@ -857,6 +961,7 @@ export default function NavigationLearningAppALLO() {
   const [isTrialTimeout, setIsTrialTimeout] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [showVersionModal, setShowVersionModal] = useState(false);
   
   // Stats
   const [sessionsToday, setSessionsToday] = useState(1);
@@ -871,6 +976,24 @@ export default function NavigationLearningAppALLO() {
   ]);
   
   const { heading: deviceHeading, requestPermission } = useDeviceOrientation();
+
+  // Restore participant from localStorage on mount (persistent sign-in)
+  useEffect(() => {
+    const saved = localStorage.getItem('nla_participant_allo');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data.participantCode) {
+          setParticipantData(data);
+          setScreen('permissions');
+          upsertParticipant(data.participantCode, {
+            deviceOs: navigator.userAgent,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).then(p => { if (p) dbParticipantId.current = p.id; });
+        }
+      } catch (e) { localStorage.removeItem('nla_participant_allo'); }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Supabase IDs (refs so they don't cause re-renders)
   const dbParticipantId = useRef(null);
@@ -1115,6 +1238,7 @@ export default function NavigationLearningAppALLO() {
     }}>
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
         {screen === 'login' && <LoginScreen onLogin={(data) => {
+          localStorage.setItem('nla_participant_allo', JSON.stringify(data));
           setParticipantData(data);
           setScreen('instructions');
           upsertParticipant(data.participantCode, {
@@ -1131,7 +1255,10 @@ export default function NavigationLearningAppALLO() {
         
         {screen === 'dashboard' && (
           <>
-            <NavBar />
+            <NavBar
+              onMenuPress={() => setShowVersionModal(true)}
+              onProfilePress={() => setActiveTab('profile')}
+            />
             {activeTab === 'training' && (
               <TrainingTab 
                 onStartSession={handleStartSession} 
@@ -1164,6 +1291,7 @@ export default function NavigationLearningAppALLO() {
             onCalibrated={handleOrientationCalibrated}
             onPause={handlePause}
             isPaused={isPaused}
+            showDirection={sessionMode === 'training'}
           />
         )}
         
@@ -1177,6 +1305,7 @@ export default function NavigationLearningAppALLO() {
             isTimeout={isTrialTimeout}
             onPause={handlePause}
             isPaused={isPaused}
+            showFeedback={sessionMode === 'training'}
           />
         )}
         
@@ -1192,6 +1321,12 @@ export default function NavigationLearningAppALLO() {
       </div>
       
       {showPauseModal && <PauseModal onResume={handleResume} onQuit={handleQuitToHome} />}
+      {showVersionModal && (
+        <VersionSelectorModal
+          onSelect={(v) => { setShowVersionModal(false); if (onSwitchVersion) onSwitchVersion(v); }}
+          onClose={() => setShowVersionModal(false)}
+        />
+      )}
       
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');

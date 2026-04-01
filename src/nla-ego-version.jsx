@@ -38,6 +38,11 @@ const useDeviceOrientation = () => {
   }, []);
 
   const requestPermission = useCallback(async () => {
+    // iOS Safari: motion/orientation APIs require a secure context (HTTPS or localhost).
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setPermission('denied');
+      return false;
+    }
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       try {
@@ -45,6 +50,7 @@ const useDeviceOrientation = () => {
         setPermission(response);
         return response === 'granted';
       } catch (err) {
+        console.warn('[DeviceOrientation] requestPermission failed:', err);
         setPermission('denied');
         return false;
       }
@@ -89,12 +95,15 @@ const Droplet = ({ mood = 'happy', size = 120 }) => {
 };
 
 // Navigation bar with pause button
-const NavBar = ({ showPause = false, onPause, isPaused = false }) => (
+const NavBar = ({ showPause = false, onPause, isPaused = false, onMenuPress, onProfilePress }) => (
   <div style={{
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '12px 20px', borderBottom: '1px solid #eee'
   }}>
-    <button style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>☰</button>
+    <button
+      onClick={onMenuPress}
+      style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}
+    >☰</button>
     <span style={{ fontFamily: '"DM Sans", sans-serif', fontWeight: 600, fontSize: '18px' }}>NLA</span>
     {showPause ? (
       <button onClick={onPause} style={{
@@ -103,8 +112,64 @@ const NavBar = ({ showPause = false, onPause, isPaused = false }) => (
         display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}>{isPaused ? '▶' : '⏸'}</button>
     ) : (
-      <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #F39C12, #E67E22)' }} />
+      <button
+        onClick={onProfilePress}
+        style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #F39C12, #E67E22)',
+          border: 'none', cursor: onProfilePress ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '15px'
+        }}
+      >👤</button>
     )}
+  </div>
+);
+
+// Version selector bottom sheet
+const VersionSelectorModal = ({ onSelect, onClose }) => (
+  <div style={{
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200,
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+  }} onClick={onClose}>
+    <div
+      style={{
+        background: 'white', borderRadius: '20px 20px 0 0', padding: '24px 24px 40px',
+        width: '100%', maxWidth: 500
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div style={{ width: 40, height: 4, borderRadius: 2, background: '#ddd', margin: '0 auto 20px' }} />
+      <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: 4, textAlign: 'center' }}>Switch Version</h3>
+      <p style={{ fontSize: '13px', color: '#888', marginBottom: 20, textAlign: 'center' }}>
+        Select which experiment version to load
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <button
+          onClick={() => onSelect('ego')}
+          style={{
+            padding: '16px', borderRadius: '12px', border: '2px solid #E67E22',
+            background: '#fef3e7', fontSize: '16px', fontWeight: 600, cursor: 'pointer',
+            color: '#1a1a2e'
+          }}
+        >🟠 Ego (Egocentric)</button>
+        <button
+          onClick={() => onSelect('allo')}
+          style={{
+            padding: '16px', borderRadius: '12px', border: '2px solid #4FC3F7',
+            background: '#e3f7fd', fontSize: '16px', fontWeight: 600, cursor: 'pointer',
+            color: '#1a1a2e'
+          }}
+        >🔵 Allo (Allocentric)</button>
+        <button
+          onClick={onClose}
+          style={{
+            padding: '14px', borderRadius: '12px', border: 'none',
+            background: '#f5f5f5', fontSize: '15px', cursor: 'pointer', color: '#888', marginTop: 4
+          }}
+        >Cancel</button>
+      </div>
+    </div>
   </div>
 );
 
@@ -231,21 +296,51 @@ const InstructionsScreen = ({ onContinue }) => (
 const PermissionsScreen = ({ onContinue, onRequestPermission }) => {
   const [permissionStatus, setPermissionStatus] = useState('pending');
   const [errorMsg, setErrorMsg] = useState('');
+  const isSecureContext =
+    typeof window !== 'undefined' && window.isSecureContext;
 
   const handleEnable = async () => {
+    if (!isSecureContext) {
+      setPermissionStatus('denied');
+      setErrorMsg(
+        'This page is not loaded over HTTPS. On iPhone Safari, compass access is blocked for http:// addresses (including LAN IPs). Use the https:// link from the dev server and accept the certificate warning once, or use Cloudflare Tunnel / deployed HTTPS.'
+      );
+      return;
+    }
     const success = await onRequestPermission();
     if (success) {
       setPermissionStatus('granted');
       setTimeout(() => onContinue(), 500);
     } else {
       setPermissionStatus('denied');
-      setErrorMsg('Permission denied. Please enable motion sensors in your device settings.');
+      setErrorMsg(
+        'Permission denied. If a system dialog appeared, tap Allow. You can also check Settings → Safari → (scroll) Motion & Orientation Access, or site-specific settings under Safari → the (aA) menu for this site.'
+      );
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', padding: '40px 30px', minHeight: '100%' }}>
       <h1 style={{ fontSize: '24px', fontWeight: 600, marginBottom: 24 }}>Enable Permissions</h1>
+
+      {!isSecureContext && (
+        <div
+          style={{
+            background: '#f8d7da',
+            border: '1px solid #dc3545',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ fontSize: '14px', color: '#721c24', marginBottom: 8 }}>
+            <strong>HTTPS required on iPhone</strong>
+          </p>
+          <p style={{ fontSize: '13px', color: '#721c24', lineHeight: 1.5 }}>
+            You opened this app with <strong>http://</strong>. Safari will not grant compass/motion for that. In the terminal, use the <strong>https://</strong> Local and Network URLs (port 5173), open that on your phone, accept the self-signed certificate if asked, then tap Enable again.
+          </p>
+        </div>
+      )}
       
       <div style={{ 
         background: '#fff3cd', 
@@ -484,17 +579,12 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
         {/* Compass status indicator */}
         <div style={{
           textAlign: 'center', marginBottom: 12, padding: '10px 16px',
-          background: usingRealCompass ? '#e8f5e9' : '#fff3e0', 
+          background: usingRealCompass ? '#e8f5e9' : '#fff3e0',
           borderRadius: '8px', fontSize: '14px',
           border: `1px solid ${usingRealCompass ? '#4CAF50' : '#ff9800'}`
         }}>
           {usingRealCompass ? (
-            <>
-              <span style={{ color: '#2e7d32' }}>🧭 Compass Active</span>
-              <br />
-              <strong style={{ fontSize: '18px' }}>{currentHeading}°</strong>
-              <span style={{ color: '#666' }}> ({directionLabels[Math.round(currentHeading / 45) * 45 % 360] || ''})</span>
-            </>
+            <span style={{ color: '#2e7d32' }}>🧭 Compass Active</span>
           ) : (
             <>
               <span style={{ color: '#e65100' }}>⚠️ Simulation Mode</span>
@@ -538,10 +628,9 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
           </div>
           
           <div style={{ marginTop: 16, textAlign: 'center' }}>
-            <p style={{ fontSize: '16px', color: '#333', fontWeight: 500 }}>
-              Target: <strong style={{ color: '#E67E22' }}>{directionLabels[targetDirection]}</strong>
+            <p style={{ fontSize: '14px', color: '#666' }}>
+              Rotate until the arrow points straight up
             </p>
-            <p style={{ fontSize: '14px', color: '#888' }}>({targetDirection}°)</p>
           </div>
         </div>
         
@@ -603,7 +692,7 @@ const RestScreen = ({ onContinue }) => (
 );
 
 // Trial Screen
-const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused }) => {
+const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
   const [localShowFeedback, setLocalShowFeedback] = useState(false);
@@ -611,7 +700,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   const timerRef = useRef(null);
   
   const [shuffledOptions, setShuffledOptions] = useState(() =>
-    [...(shapeConfig?.options || ['In front', 'Behind', 'To the right', 'To the left'])].sort(() => Math.random() - 0.5)
+    [...(shapeConfig?.options || ['In front of', 'Behind', 'To the left of', 'To the right of'])].sort(() => Math.random() - 0.5)
   );
   
   // Reset state and re-shuffle options when trial changes
@@ -620,7 +709,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     setLocalShowFeedback(false);
     setTimeLeft(15);
     startTimeRef.current = Date.now();
-    setShuffledOptions([...(shapeConfig?.options || ['In front', 'Behind', 'To the right', 'To the left'])].sort(() => Math.random() - 0.5));
+    setShuffledOptions([...(shapeConfig?.options || ['In front of', 'Behind', 'To the left of', 'To the right of'])].sort(() => Math.random() - 0.5));
   }, [trialNumber, shapeConfig]);
 
   // Single timer effect — only one interval at a time
@@ -648,15 +737,17 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     if (timerRef.current) clearInterval(timerRef.current);
     const reactionTime = Date.now() - startTimeRef.current;
     const isCorrect = option === shapeConfig.correctAnswer;
-    if (isCorrect) playCorrectFeedback(); else playIncorrectFeedback();
+    if (showFeedback) {
+      if (isCorrect) playCorrectFeedback(); else playIncorrectFeedback();
+    }
     setSelectedAnswer(option);
     setLocalShowFeedback(true);
-    setTimeout(() => onResponse(option, reactionTime), 3000);
+    setTimeout(() => onResponse(option, reactionTime), showFeedback ? 3000 : 300);
   };
-  
+
   const getButtonStyle = (option) => {
     const base = { padding: '16px 18px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '17px', cursor: (localShowFeedback || selectedAnswer || isPaused) ? 'default' : 'pointer', background: 'white', fontWeight: 500 };
-    if (localShowFeedback && selectedAnswer) {
+    if (showFeedback && localShowFeedback && selectedAnswer) {
       if (option === shapeConfig.correctAnswer) return { ...base, background: '#4CAF50', color: 'white', borderColor: '#4CAF50' };
       if (option === selectedAnswer && option !== shapeConfig.correctAnswer) return { ...base, background: '#f44336', color: 'white', borderColor: '#f44336' };
     }
@@ -683,7 +774,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
         <p style={{ fontSize: '14px', color: '#888', marginBottom: 8 }}>Trial {trialNumber} of {totalTrials}</p>
         
         <div style={{ background: '#f8f9fa', borderRadius: '10px', padding: '12px', marginBottom: 12, fontSize: '15px', lineHeight: 1.5 }}>
-          Identify the circle's location compared to the square. <strong>15 seconds</strong> to respond.
+          Where is the circle relative to the square? You have <strong>15 seconds</strong> to respond.
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -698,7 +789,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
           <div style={{ width: 80, height: 80, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 1 : 0 }} />
         </div>
         
-        <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>Compared to the square, the circle is ______</p>
+        <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>The circle is ______ the square.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {shuffledOptions.map(option => (
             <button key={option} onClick={() => handleSelect(option)} disabled={localShowFeedback || selectedAnswer || isPaused} style={getButtonStyle(option)}>{option}</button>
@@ -733,7 +824,7 @@ const ResultsScreen = ({ correctCount, totalTrials, streak, avgTime, onBackToHom
 );
 
 // Main App
-export default function NavigationLearningAppEGO() {
+export default function NavigationLearningAppEGO({ onSwitchVersion }) {
   const [screen, setScreen] = useState('login');
   const [activeTab, setActiveTab] = useState('training');
   const [sessionMode, setSessionMode] = useState('training');
@@ -744,6 +835,7 @@ export default function NavigationLearningAppEGO() {
   const [isTrialTimeout, setIsTrialTimeout] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [showVersionModal, setShowVersionModal] = useState(false);
   
   const [sessionsToday, setSessionsToday] = useState(1);
   const [streak, setStreak] = useState(3);
@@ -758,6 +850,24 @@ export default function NavigationLearningAppEGO() {
   const { heading: deviceHeading, requestPermission } = useDeviceOrientation();
   const isCompassWorking = deviceHeading !== null;
 
+  // Restore participant from localStorage on mount (persistent sign-in)
+  useEffect(() => {
+    const saved = localStorage.getItem('nla_participant_ego');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data.participantCode) {
+          setParticipantData(data);
+          setScreen('permissions');
+          upsertParticipant(data.participantCode, {
+            deviceOs: navigator.userAgent,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).then(p => { if (p) dbParticipantId.current = p.id; });
+        }
+      } catch (e) { localStorage.removeItem('nla_participant_ego'); }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Supabase IDs (refs so they don't cause re-renders)
   const dbParticipantId = useRef(null);
   const dbSessionId = useRef(null);
@@ -770,19 +880,19 @@ export default function NavigationLearningAppEGO() {
   });
 
   // Ego: answer is always relative to the participant, independent of compass heading
-  const EGO_OPTIONS = ['In front', 'Behind', 'To the right', 'To the left'];
+  const EGO_OPTIONS = ['In front of', 'Behind', 'To the left of', 'To the right of'];
 
   const opposites = {
-    'In front': 'Behind', 'Behind': 'In front',
-    'To the right': 'To the left', 'To the left': 'To the right',
+    'In front of': 'Behind', 'Behind': 'In front of',
+    'To the right of': 'To the left of', 'To the left of': 'To the right of',
   };
 
   // All 4 possible configs (ego answers don't change with facing direction)
   const allEgoConfigs = [
-    { layout: 'horizontal', squareFirst: true,  correctAnswer: 'To the right', options: EGO_OPTIONS },
-    { layout: 'horizontal', squareFirst: false, correctAnswer: 'To the left',  options: EGO_OPTIONS },
-    { layout: 'vertical',   squareFirst: true,  correctAnswer: 'Behind',       options: EGO_OPTIONS },
-    { layout: 'vertical',   squareFirst: false, correctAnswer: 'In front',     options: EGO_OPTIONS },
+    { layout: 'horizontal', squareFirst: true,  correctAnswer: 'To the right of', options: EGO_OPTIONS },
+    { layout: 'horizontal', squareFirst: false, correctAnswer: 'To the left of',  options: EGO_OPTIONS },
+    { layout: 'vertical',   squareFirst: true,  correctAnswer: 'Behind',          options: EGO_OPTIONS },
+    { layout: 'vertical',   squareFirst: false, correctAnswer: 'In front of',     options: EGO_OPTIONS },
   ];
 
   // Pre-generate all 12 trials (6 blocks × 2), fully random, no opposites in same block
@@ -908,6 +1018,7 @@ export default function NavigationLearningAppEGO() {
     <div style={{ width: '100%', minHeight: '100dvh', margin: '0 auto', background: 'white', fontFamily: '"DM Sans", -apple-system, sans-serif', position: 'relative' }}>
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
         {screen === 'login' && <LoginScreen onLogin={(data) => {
+          localStorage.setItem('nla_participant_ego', JSON.stringify(data));
           setParticipantData(data);
           setScreen('instructions');
           upsertParticipant(data.participantCode, {
@@ -919,7 +1030,10 @@ export default function NavigationLearningAppEGO() {
         {screen === 'permissions' && <PermissionsScreen onContinue={() => setScreen('dashboard')} onRequestPermission={requestPermission} />}
         {screen === 'dashboard' && (
           <>
-            <NavBar />
+            <NavBar
+              onMenuPress={() => setShowVersionModal(true)}
+              onProfilePress={() => setActiveTab('profile')}
+            />
             {activeTab === 'training' && <TrainingTab onStartSession={handleStartSession} sessionsToday={sessionsToday} participantCode={participantData?.participantCode} trainingHistory={trainingHistory} />}
             {activeTab === 'testing' && <TestingTab onStartTest={handleStartTest} />}
             {activeTab === 'ranking' && <RankingTab currentStreak={streak} />}
@@ -929,11 +1043,17 @@ export default function NavigationLearningAppEGO() {
         )}
         {screen === 'rest' && <RestScreen onContinue={handleRestDone} />}
         {screen === 'orientation' && <OrientationScreen targetDirection={targetDirections[orientationPhase]} deviceHeading={deviceHeading} onCalibrated={handleOrientationCalibrated} onPause={handlePause} isPaused={isPaused} isCompassWorking={isCompassWorking} />}
-        {screen === 'trial' && <TrialScreen key={`${orientationPhase}-${trialPhase}`} trialNumber={currentTrialNumber} totalTrials={totalTrials} shapeConfig={currentShapeConfig} onResponse={handleTrialResponse} isTimeout={isTrialTimeout} onPause={handlePause} isPaused={isPaused} />}
+        {screen === 'trial' && <TrialScreen key={`${orientationPhase}-${trialPhase}`} trialNumber={currentTrialNumber} totalTrials={totalTrials} shapeConfig={currentShapeConfig} onResponse={handleTrialResponse} isTimeout={isTrialTimeout} onPause={handlePause} isPaused={isPaused} showFeedback={sessionMode === 'training'} />}
         {screen === 'results' && <ResultsScreen correctCount={sessionData.correctCount} totalTrials={totalTrials} streak={streak} avgTime={avgTime} onBackToHome={handleQuitToHome} />}
       </div>
       
       {showPauseModal && <PauseModal onResume={handleResume} onQuit={handleQuitToHome} />}
+      {showVersionModal && (
+        <VersionSelectorModal
+          onSelect={(v) => { setShowVersionModal(false); if (onSwitchVersion) onSwitchVersion(v); }}
+          onClose={() => setShowVersionModal(false)}
+        />
+      )}
       
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
