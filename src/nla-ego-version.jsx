@@ -786,7 +786,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
         
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 32, flexDirection: shapeConfig?.layout === 'vertical' ? 'column' : 'row' }}>
           <div style={{ width: 80, height: 80, background: '#e0e0e0', borderRadius: 4, border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 0 : 1 }} />
-          <div style={{ width: 80, height: 80, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 1 : 0 }} />
+          <div style={{ width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 1 : 0 }} />
         </div>
         
         <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>The circle is ______ the square.</p>

@@ -881,7 +881,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
             }} />
             {/* Circle */}
             <div style={{
-              width: 80, height: 80, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
+              width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
               position: 'absolute',
               ...(shapeConfig.layout === 'diag-nwse'
                 ? (shapeConfig.squareFirst ? { bottom: '10%', right: '15%' } : { top: '10%', left: '15%' })
@@ -899,7 +899,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
               order: shapeConfig?.squareFirst ? 0 : 1
             }} />
             <div style={{
-              width: 80, height: 80, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
+              width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
               order: shapeConfig?.squareFirst ? 1 : 0
             }} />
           </div>
