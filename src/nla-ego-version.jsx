@@ -535,6 +535,12 @@ const ProfileTab = ({ participantCode, totalPoints, currentStreak, totalSessions
   </div>
 );
 
+// Convert any heading (0–359°) to the nearest cardinal/intercardinal label
+function headingToLabel(deg) {
+  const dirs = ['North', 'Northeast', 'East', 'Southeast', 'South', 'Southwest', 'West', 'Northwest'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}
+
 // ORIENTATION SCREEN - Real compass support
 const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused, isCompassWorking }) => {
   const [simulatedHeading, setSimulatedHeading] = useState(0);
@@ -607,28 +613,33 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
         
         {/* Arrow visualization */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Real-time facing direction */}
+          <div style={{
+            marginBottom: 12, padding: '8px 20px', borderRadius: '20px',
+            background: isAligned ? '#e8f5e9' : '#f5f5f5',
+            border: `1px solid ${isAligned ? '#4CAF50' : '#ddd'}`,
+            textAlign: 'center'
+          }}>
+            <span style={{ fontSize: '13px', color: '#888' }}>Currently facing: </span>
+            <span style={{ fontSize: '15px', fontWeight: 600, color: isAligned ? '#2e7d32' : '#333' }}>
+              {headingToLabel(currentHeading)} ({Math.round(currentHeading)}°)
+            </span>
+          </div>
+
           <div style={{ position: 'relative' }}>
-            {/* Compass rose background */}
-            <svg viewBox="0 0 200 200" width="180" height="180" style={{ position: 'absolute', top: -10, left: -10, opacity: 0.3 }}>
-              <text x="100" y="20" textAnchor="middle" fontSize="14" fill="#333">N</text>
-              <text x="185" y="105" textAnchor="middle" fontSize="14" fill="#333">E</text>
-              <text x="100" y="195" textAnchor="middle" fontSize="14" fill="#333">S</text>
-              <text x="15" y="105" textAnchor="middle" fontSize="14" fill="#333">W</text>
-            </svg>
-            
-            {/* Main arrow */}
+            {/* Main arrow (no N/E/S/W labels) */}
             <svg viewBox="0 0 100 100" width="160" height="160"
               style={{ transform: `rotate(${arrowRotation}deg)`, transition: 'transform 0.1s ease-out' }}>
               <circle cx="50" cy="50" r="48" fill="none" stroke={isAligned ? '#4CAF50' : '#ddd'} strokeWidth="2" />
               <circle cx="50" cy="50" r="45" fill="none" stroke="#ddd" strokeWidth="1" strokeDasharray="4,4" />
-              
+
               {/* Arrow */}
-              <path d="M50 8 L62 42 L54 42 L54 75 L46 75 L46 42 L38 42 Z" 
+              <path d="M50 8 L62 42 L54 42 L54 75 L46 75 L46 42 L38 42 Z"
                 fill={isAligned ? '#4CAF50' : '#E67E22'} />
-              
+
               {/* Center dot */}
               <circle cx="50" cy="50" r="4" fill={isAligned ? '#4CAF50' : '#666'} />
-              
+
               {isAligned && (
                 <circle cx="50" cy="50" r="46" fill="none" stroke="#4CAF50" strokeWidth="4" opacity="0.5">
                   <animate attributeName="r" from="46" to="50" dur="1s" repeatCount="indefinite" />
@@ -637,7 +648,7 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
               )}
             </svg>
           </div>
-          
+
           <div style={{ marginTop: 16, textAlign: 'center' }}>
             <p style={{ fontSize: '14px', color: '#666' }}>
               Rotate until the arrow points straight up
@@ -784,10 +795,6 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
       <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
         <p style={{ fontSize: '14px', color: '#888', marginBottom: 8 }}>Trial {trialNumber} of {totalTrials}</p>
         
-        <div style={{ background: '#f8f9fa', borderRadius: '10px', padding: '12px', marginBottom: 12, fontSize: '15px', lineHeight: 1.5 }}>
-          From your perspective, the circle is _______ the square. You have <strong>15 seconds</strong> to respond.
-        </div>
-        
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 1, height: 8, background: '#e0e0e0', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{ width: `${(timeLeft / 15) * 100}%`, height: '100%', background: timeLeft <= 3 ? '#f44336' : timeLeft <= 5 ? '#FF9800' : '#F39C12', transition: 'width 1s linear' }} />
@@ -795,20 +802,29 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
           <span style={{ fontSize: '16px', fontWeight: 600, color: timeLeft <= 3 ? '#f44336' : '#666', minWidth: 28 }}>{timeLeft}s</span>
         </div>
         
-        <div style={{ height: 180, position: 'relative', flexShrink: 0, margin: '4px 0' }}>
+        {/* Shapes — responsive square container: same % on both axes = exactly 45° diagonal on every screen */}
+        <div style={{ width: '100%', maxWidth: 240, aspectRatio: '1 / 1', position: 'relative', flexShrink: 0, margin: '8px auto' }}>
           <div style={{
             width: 72, height: 72, background: '#e0e0e0', borderRadius: 4, border: '2px solid #bbb',
             position: 'absolute', transform: 'translate(-50%, -50%)',
             ...(shapeConfig?.layout === 'vertical'
-              ? { left: '50%', top: shapeConfig?.squareFirst ? '28%' : '72%' }
-              : { top: '50%', left: shapeConfig?.squareFirst ? '28%' : '72%' })
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '25%' : '75%' }
+              : shapeConfig?.layout === 'diag-nwse'
+              ? (shapeConfig?.squareFirst ? { top: '30%', left: '30%' } : { top: '70%', left: '70%' })
+              : shapeConfig?.layout === 'diag-nesw'
+              ? (shapeConfig?.squareFirst ? { top: '30%', left: '70%' } : { top: '70%', left: '30%' })
+              : { top: '50%', left: shapeConfig?.squareFirst ? '25%' : '75%' })
           }} />
           <div style={{
             width: 52, height: 52, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb',
             position: 'absolute', transform: 'translate(-50%, -50%)',
             ...(shapeConfig?.layout === 'vertical'
-              ? { left: '50%', top: shapeConfig?.squareFirst ? '72%' : '28%' }
-              : { top: '50%', left: shapeConfig?.squareFirst ? '72%' : '28%' })
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '75%' : '25%' }
+              : shapeConfig?.layout === 'diag-nwse'
+              ? (shapeConfig?.squareFirst ? { top: '70%', left: '70%' } : { top: '30%', left: '30%' })
+              : shapeConfig?.layout === 'diag-nesw'
+              ? (shapeConfig?.squareFirst ? { top: '70%', left: '30%' } : { top: '30%', left: '70%' })
+              : { top: '50%', left: shapeConfig?.squareFirst ? '75%' : '25%' })
           }} />
         </div>
         
