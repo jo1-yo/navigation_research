@@ -538,21 +538,32 @@ const ProfileTab = ({ participantCode, totalPoints, currentStreak, totalSessions
 // ORIENTATION SCREEN - Real compass support
 const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused, isCompassWorking }) => {
   const [simulatedHeading, setSimulatedHeading] = useState(0);
-  
+  const arrowRotRef = useRef(null);
+
   // Use real heading if available, fallback to simulation
   const currentHeading = (deviceHeading !== null && isCompassWorking) ? deviceHeading : simulatedHeading;
   const usingRealCompass = deviceHeading !== null && isCompassWorking;
-  
-  const directionLabels = { 
-    0: 'North', 45: 'Northeast', 90: 'East', 135: 'Southeast', 
-    180: 'South', 225: 'Southwest', 270: 'West', 315: 'Northwest' 
+
+  const directionLabels = {
+    0: 'North', 45: 'Northeast', 90: 'East', 135: 'Southeast',
+    180: 'South', 225: 'Southwest', 270: 'West', 315: 'Northwest'
   };
-  
-  // Calculate how much the arrow should rotate
-  // Arrow points toward target. When user faces target, arrow points up (0°)
+
+  // Same logic as allo: arrow points up when facing target
   const diff = ((targetDirection - currentHeading) % 360 + 360) % 360;
-  const arrowRotation = diff > 180 ? diff - 360 : diff;
-  const isAligned = Math.abs(arrowRotation) < 15;
+  const rawArrow = diff > 180 ? diff - 360 : diff; // -180 to 180
+
+  // Smooth CSS rotation: always take the shortest angular path to prevent 360° spin at ±180°
+  if (arrowRotRef.current === null) arrowRotRef.current = rawArrow;
+  const prevNorm = ((arrowRotRef.current % 360) + 360) % 360;
+  const prevSigned = prevNorm > 180 ? prevNorm - 360 : prevNorm;
+  let delta = rawArrow - prevSigned;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  const arrowRotation = arrowRotRef.current + delta;
+  arrowRotRef.current = arrowRotation;
+
+  const isAligned = Math.abs(rawArrow) < 15;
   
   // Keyboard/button controls for simulation
   useEffect(() => {
@@ -700,7 +711,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   const timerRef = useRef(null);
   
   const [shuffledOptions, setShuffledOptions] = useState(() =>
-    [...(shapeConfig?.options || ['In front of', 'Behind', 'To the left of', 'To the right of'])].sort(() => Math.random() - 0.5)
+    [...(shapeConfig?.options || ['closer than', 'farther than', 'to the left of', 'to the right of'])].sort(() => Math.random() - 0.5)
   );
   
   // Reset state and re-shuffle options when trial changes
@@ -709,7 +720,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     setLocalShowFeedback(false);
     setTimeLeft(15);
     startTimeRef.current = Date.now();
-    setShuffledOptions([...(shapeConfig?.options || ['In front of', 'Behind', 'To the left of', 'To the right of'])].sort(() => Math.random() - 0.5));
+    setShuffledOptions([...(shapeConfig?.options || ['closer than', 'farther than', 'to the left of', 'to the right of'])].sort(() => Math.random() - 0.5));
   }, [trialNumber, shapeConfig]);
 
   // Single timer effect — only one interval at a time
@@ -774,7 +785,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
         <p style={{ fontSize: '14px', color: '#888', marginBottom: 8 }}>Trial {trialNumber} of {totalTrials}</p>
         
         <div style={{ background: '#f8f9fa', borderRadius: '10px', padding: '12px', marginBottom: 12, fontSize: '15px', lineHeight: 1.5 }}>
-          Where is the circle relative to the square? You have <strong>15 seconds</strong> to respond.
+          From your perspective, the circle is _______ the square. You have <strong>15 seconds</strong> to respond.
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -784,12 +795,24 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
           <span style={{ fontSize: '16px', fontWeight: 600, color: timeLeft <= 3 ? '#f44336' : '#666', minWidth: 28 }}>{timeLeft}s</span>
         </div>
         
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 32, flexDirection: shapeConfig?.layout === 'vertical' ? 'column' : 'row' }}>
-          <div style={{ width: 80, height: 80, background: '#e0e0e0', borderRadius: 4, border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 0 : 1 }} />
-          <div style={{ width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb', order: shapeConfig?.squareFirst ? 1 : 0 }} />
+        <div style={{ height: 180, position: 'relative', flexShrink: 0, margin: '4px 0' }}>
+          <div style={{
+            width: 72, height: 72, background: '#e0e0e0', borderRadius: 4, border: '2px solid #bbb',
+            position: 'absolute', transform: 'translate(-50%, -50%)',
+            ...(shapeConfig?.layout === 'vertical'
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '28%' : '72%' }
+              : { top: '50%', left: shapeConfig?.squareFirst ? '28%' : '72%' })
+          }} />
+          <div style={{
+            width: 52, height: 52, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #bbb',
+            position: 'absolute', transform: 'translate(-50%, -50%)',
+            ...(shapeConfig?.layout === 'vertical'
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '72%' : '28%' }
+              : { top: '50%', left: shapeConfig?.squareFirst ? '72%' : '28%' })
+          }} />
         </div>
         
-        <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>The circle is ______ the square.</p>
+        <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>From your perspective, the circle is _______ the square.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {shuffledOptions.map(option => (
             <button key={option} onClick={() => handleSelect(option)} disabled={localShowFeedback || selectedAnswer || isPaused} style={getButtonStyle(option)}>{option}</button>
@@ -880,19 +903,19 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
   });
 
   // Ego: answer is always relative to the participant, independent of compass heading
-  const EGO_OPTIONS = ['In front of', 'Behind', 'To the left of', 'To the right of'];
+  const EGO_OPTIONS = ['closer than', 'farther than', 'to the left of', 'to the right of'];
 
   const opposites = {
-    'In front of': 'Behind', 'Behind': 'In front of',
-    'To the right of': 'To the left of', 'To the left of': 'To the right of',
+    'closer than': 'farther than', 'farther than': 'closer than',
+    'to the right of': 'to the left of', 'to the left of': 'to the right of',
   };
 
   // All 4 possible configs (ego answers don't change with facing direction)
   const allEgoConfigs = [
-    { layout: 'horizontal', squareFirst: true,  correctAnswer: 'To the right of', options: EGO_OPTIONS },
-    { layout: 'horizontal', squareFirst: false, correctAnswer: 'To the left of',  options: EGO_OPTIONS },
-    { layout: 'vertical',   squareFirst: true,  correctAnswer: 'Behind',          options: EGO_OPTIONS },
-    { layout: 'vertical',   squareFirst: false, correctAnswer: 'In front of',     options: EGO_OPTIONS },
+    { layout: 'horizontal', squareFirst: true,  correctAnswer: 'to the right of', options: EGO_OPTIONS },
+    { layout: 'horizontal', squareFirst: false, correctAnswer: 'to the left of',  options: EGO_OPTIONS },
+    { layout: 'vertical',   squareFirst: true,  correctAnswer: 'closer than',     options: EGO_OPTIONS },
+    { layout: 'vertical',   squareFirst: false, correctAnswer: 'farther than',    options: EGO_OPTIONS },
   ];
 
   // Pre-generate all 12 trials (6 blocks × 2), fully random, no opposites in same block

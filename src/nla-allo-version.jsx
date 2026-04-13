@@ -868,42 +868,32 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
         </div>
         
         {/* Shapes */}
-        {shapeConfig?.layout?.startsWith('diag-') ? (
-          <div style={{ flex: 1, position: 'relative' }}>
-            {/* Square */}
-            <div style={{
-              width: 80, height: 80, background: '#e0e0e0', borderRadius: 4, border: '2px solid #ccc',
-              position: 'absolute',
-              ...(shapeConfig.layout === 'diag-nwse'
-                ? (shapeConfig.squareFirst ? { top: '10%', left: '15%' } : { bottom: '10%', right: '15%' })
-                : (shapeConfig.squareFirst ? { top: '10%', right: '15%' } : { bottom: '10%', left: '15%' })
-              )
-            }} />
-            {/* Circle */}
-            <div style={{
-              width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
-              position: 'absolute',
-              ...(shapeConfig.layout === 'diag-nwse'
-                ? (shapeConfig.squareFirst ? { bottom: '10%', right: '15%' } : { top: '10%', left: '15%' })
-                : (shapeConfig.squareFirst ? { bottom: '10%', left: '15%' } : { top: '10%', right: '15%' })
-              )
-            }} />
-          </div>
-        ) : (
+        <div style={{ height: 180, position: 'relative', flexShrink: 0, margin: '4px 0' }}>
+          {/* Square */}
           <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 40,
-            flexDirection: shapeConfig?.layout === 'vertical' ? 'column' : 'row'
-          }}>
-            <div style={{
-              width: 80, height: 80, background: '#e0e0e0', borderRadius: 4, border: '2px solid #ccc',
-              order: shapeConfig?.squareFirst ? 0 : 1
-            }} />
-            <div style={{
-              width: 56, height: 56, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
-              order: shapeConfig?.squareFirst ? 1 : 0
-            }} />
-          </div>
-        )}
+            width: 72, height: 72, background: '#e0e0e0', borderRadius: 4, border: '2px solid #ccc',
+            position: 'absolute', transform: 'translate(-50%, -50%)',
+            ...(shapeConfig?.layout === 'vertical'
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '28%' : '72%' }
+              : shapeConfig?.layout === 'horizontal'
+              ? { top: '50%', left: shapeConfig?.squareFirst ? '28%' : '72%' }
+              : shapeConfig?.layout === 'diag-nwse'
+              ? (shapeConfig?.squareFirst ? { top: '28%', left: '28%' } : { top: '72%', left: '72%' })
+              : (shapeConfig?.squareFirst ? { top: '28%', left: '72%' } : { top: '72%', left: '28%' }))
+          }} />
+          {/* Circle */}
+          <div style={{
+            width: 52, height: 52, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
+            position: 'absolute', transform: 'translate(-50%, -50%)',
+            ...(shapeConfig?.layout === 'vertical'
+              ? { left: '50%', top: shapeConfig?.squareFirst ? '72%' : '28%' }
+              : shapeConfig?.layout === 'horizontal'
+              ? { top: '50%', left: shapeConfig?.squareFirst ? '72%' : '28%' }
+              : shapeConfig?.layout === 'diag-nwse'
+              ? (shapeConfig?.squareFirst ? { top: '72%', left: '72%' } : { top: '28%', left: '28%' })
+              : (shapeConfig?.squareFirst ? { top: '72%', left: '28%' } : { top: '28%', left: '72%' }))
+          }} />
+        </div>
         
         <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>
           Compared to the square, the circle is ______
