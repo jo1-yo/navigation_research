@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { feedbackCorrect, feedbackWrong } from './haptics.js';
 import { upsertParticipant, createSession, createOrientationBlock, updateOrientationBlock, createTrial, completeSession } from './lib/db.js';
+import ARStage from './ARStage.jsx';
+import { APP_VERSION } from './lib/appVersion.js';
 
 const playCorrectFeedback = feedbackCorrect;
 const playIncorrectFeedback = feedbackWrong;
@@ -867,33 +869,9 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
           <span style={{ fontSize: '16px', fontWeight: 600, color: timeLeft <= 3 ? '#f44336' : '#666', minWidth: 28 }}>{timeLeft}s</span>
         </div>
         
-        {/* Shapes — responsive square container: same % on both axes = exactly 45° diagonal on every screen */}
-        <div style={{ width: '100%', maxWidth: 240, aspectRatio: '1 / 1', position: 'relative', flexShrink: 0, margin: '8px auto' }}>
-          {/* Square */}
-          <div style={{
-            width: 72, height: 72, background: '#e0e0e0', borderRadius: 4, border: '2px solid #ccc',
-            position: 'absolute', transform: 'translate(-50%, -50%)',
-            ...(shapeConfig?.layout === 'vertical'
-              ? { left: '50%', top: shapeConfig?.squareFirst ? '25%' : '75%' }
-              : shapeConfig?.layout === 'horizontal'
-              ? { top: '50%', left: shapeConfig?.squareFirst ? '25%' : '75%' }
-              : shapeConfig?.layout === 'diag-nwse'
-              ? (shapeConfig?.squareFirst ? { top: '30%', left: '30%' } : { top: '70%', left: '70%' })
-              : (shapeConfig?.squareFirst ? { top: '30%', left: '70%' } : { top: '70%', left: '30%' }))
-          }} />
-          {/* Circle */}
-          <div style={{
-            width: 52, height: 52, background: '#e0e0e0', borderRadius: '50%', border: '2px solid #ccc',
-            position: 'absolute', transform: 'translate(-50%, -50%)',
-            ...(shapeConfig?.layout === 'vertical'
-              ? { left: '50%', top: shapeConfig?.squareFirst ? '75%' : '25%' }
-              : shapeConfig?.layout === 'horizontal'
-              ? { top: '50%', left: shapeConfig?.squareFirst ? '75%' : '25%' }
-              : shapeConfig?.layout === 'diag-nwse'
-              ? (shapeConfig?.squareFirst ? { top: '70%', left: '70%' } : { top: '30%', left: '30%' })
-              : (shapeConfig?.squareFirst ? { top: '70%', left: '30%' } : { top: '30%', left: '70%' }))
-          }} />
-        </div>
+        {/* Shapes — real 3D objects laid out in front of the participant. Screen-up
+            is depth away from the body, matching dirMap8's "top" = facing direction. */}
+        <ARStage layout={shapeConfig?.layout} squareFirst={shapeConfig?.squareFirst} />
         
         <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>
           Compared to the square, the circle is ______
@@ -1196,6 +1174,7 @@ export default function NavigationLearningAppALLO({ onSwitchVersion }) {
         reactionTimeMs: reactionTime,
         timeout: isTimeout,
         optionsShown: currentShapeConfig.options,
+        appVersion: APP_VERSION,
       });
     }
 
