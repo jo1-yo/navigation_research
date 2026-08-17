@@ -1,18 +1,17 @@
 /**
- * Data access layer for Supabase.
+ * Data access layer.
  *
- * All functions are async, return the inserted/updated row on success
- * or null on failure. Errors are logged to console, never thrown,
- * so the experiment flow is never blocked by network issues.
+ * Every write goes to the on-device store in localStore.js, and additionally to
+ * Supabase when it is configured. Supabase stays the source of truth for IDs when
+ * it is available; otherwise a local ID is generated so the
+ * participant → session → block → trial chain still links up and a session run
+ * without credentials is fully recoverable afterwards.
+ *
+ * All functions are async, never throw, and log errors to the console, so the
+ * experiment flow is never blocked by network issues.
  */
 import supabase from './supabase.js';
-
-// ─── helpers ──────────────────────────────────────────────
-
-function noop(label) {
-  console.warn(`[db.${label}] Supabase not configured — skipping.`);
-  return null;
-}
+import * as local from './localStore.js';
 
 // ─── participants ─────────────────────────────────────────
 
@@ -23,33 +22,46 @@ function noop(label) {
  * @returns {Promise<{ id: string, participant_code: string } | null>}
  */
 export async function upsertParticipant(participantCode, deviceInfo = {}) {
-  if (!supabase) return noop('upsertParticipant');
-  console.log('[db.upsertParticipant] Looking up:', participantCode);
+  let remote = null;
 
-  const { data: existing, error: selectErr } = await supabase
-    .from('participants')
-    .select('id, participant_code')
-    .eq('participant_code', participantCode)
-    .maybeSingle();
+  if (supabase) {
+    const { data: existing, error: selectErr } = await supabase
+      .from('participants')
+      .select('id, participant_code')
+      .eq('participant_code', participantCode)
+      .maybeSingle();
 
-  if (selectErr) { console.error('[db.upsertParticipant] SELECT failed:', selectErr); }
-  if (existing) { console.log('[db.upsertParticipant] Found existing:', existing.id); return existing; }
+    if (selectErr) console.error('[db.upsertParticipant] SELECT failed:', selectErr);
 
-  const { data, error } = await supabase
-    .from('participants')
-    .insert({
-      participant_code: participantCode,
-      device_os: deviceInfo.deviceOs ?? null,
-      device_model: deviceInfo.deviceModel ?? null,
-      timezone: deviceInfo.timezone ?? null,
-      study_start_date: new Date().toISOString().slice(0, 10),
-    })
-    .select('id, participant_code')
-    .single();
+    if (existing) {
+      remote = existing;
+    } else {
+      const { data, error } = await supabase
+        .from('participants')
+        .insert({
+          participant_code: participantCode,
+          device_os: deviceInfo.deviceOs ?? null,
+          device_model: deviceInfo.deviceModel ?? null,
+          timezone: deviceInfo.timezone ?? null,
+          study_start_date: new Date().toISOString().slice(0, 10),
+        })
+        .select('id, participant_code')
+        .single();
 
-  if (error) { console.error('[db.upsertParticipant] INSERT failed:', error); return null; }
-  console.log('[db.upsertParticipant] Created new:', data.id);
-  return data;
+      if (error) console.error('[db.upsertParticipant] INSERT failed:', error);
+      else remote = data;
+    }
+  }
+
+  const row = local.recordParticipant({
+    id: remote?.id,
+    participantCode,
+    deviceOs: deviceInfo.deviceOs,
+    deviceModel: deviceInfo.deviceModel,
+    timezone: deviceInfo.timezone,
+  });
+
+  return remote ?? row;
 }
 
 // ─── sessions ─────────────────────────────────────────────
@@ -60,22 +72,21 @@ export async function upsertParticipant(participantCode, deviceInfo = {}) {
  * @returns {Promise<{ id: string } | null>}
  */
 export async function createSession({ participantId, version, sessionType }) {
-  if (!supabase) return noop('createSession');
-  console.log('[db.createSession] Creating:', { participantId, version, sessionType });
+  let remote = null;
 
-  const { data, error } = await supabase
-    .from('sessions')
-    .insert({
-      participant_id: participantId,
-      version,
-      session_type: sessionType,
-    })
-    .select('id')
-    .single();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert({ participant_id: participantId, version, session_type: sessionType })
+      .select('id')
+      .single();
 
-  if (error) { console.error('[db.createSession] INSERT failed:', error); return null; }
-  console.log('[db.createSession] Created:', data.id);
-  return data;
+    if (error) console.error('[db.createSession] INSERT failed:', error);
+    else remote = data;
+  }
+
+  const row = local.recordSession({ id: remote?.id, participantId, version, sessionType });
+  return remote ?? row;
 }
 
 /**
@@ -84,23 +95,27 @@ export async function createSession({ participantId, version, sessionType }) {
  * @param {{ totalCorrect: number, totalTrials: number, avgReactionTimeMs: number }} summary
  */
 export async function completeSession(sessionId, { totalCorrect, totalTrials, avgReactionTimeMs }) {
-  if (!supabase) return noop('completeSession');
+  let remote = null;
 
-  const { data, error } = await supabase
-    .from('sessions')
-    .update({
-      timestamp_end: new Date().toISOString(),
-      total_correct: totalCorrect,
-      total_trials: totalTrials,
-      avg_reaction_time_ms: avgReactionTimeMs,
-    })
-    .eq('id', sessionId)
-    .select('id')
-    .single();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({
+        timestamp_end: new Date().toISOString(),
+        total_correct: totalCorrect,
+        total_trials: totalTrials,
+        avg_reaction_time_ms: avgReactionTimeMs,
+      })
+      .eq('id', sessionId)
+      .select('id')
+      .single();
 
-  if (error) { console.error('[db.completeSession] Failed to complete session:', sessionId, error); return null; }
-  console.log('[db.completeSession] Session completed:', sessionId, { totalCorrect, totalTrials, avgReactionTimeMs });
-  return data;
+    if (error) console.error('[db.completeSession] Failed to complete session:', sessionId, error);
+    else remote = data;
+  }
+
+  const row = local.recordSessionComplete(sessionId, { totalCorrect, totalTrials, avgReactionTimeMs });
+  return remote ?? row;
 }
 
 // ─── orientation blocks ───────────────────────────────────
@@ -111,20 +126,25 @@ export async function completeSession(sessionId, { totalCorrect, totalTrials, av
  * @returns {Promise<{ id: string } | null>}
  */
 export async function createOrientationBlock({ sessionId, blockOrder, targetDirection }) {
-  if (!supabase) return noop('createOrientationBlock');
+  let remote = null;
 
-  const { data, error } = await supabase
-    .from('orientation_blocks')
-    .insert({
-      session_id: sessionId,
-      block_order: blockOrder,
-      target_allocentric_direction: targetDirection,
-    })
-    .select('id')
-    .single();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('orientation_blocks')
+      .insert({
+        session_id: sessionId,
+        block_order: blockOrder,
+        target_allocentric_direction: targetDirection,
+      })
+      .select('id')
+      .single();
 
-  if (error) { console.error('[db.createOrientationBlock]', error); return null; }
-  return data;
+    if (error) console.error('[db.createOrientationBlock]', error);
+    else remote = data;
+  }
+
+  const row = local.recordBlock({ id: remote?.id, sessionId, blockOrder, targetDirection });
+  return remote ?? row;
 }
 
 /**
@@ -133,21 +153,28 @@ export async function createOrientationBlock({ sessionId, blockOrder, targetDire
  * @param {{ finalFacingDirection?: number, orientationErrorDeg?: number, orientationLatencyMs?: number }} fields
  */
 export async function updateOrientationBlock(blockId, { finalFacingDirection, orientationErrorDeg, orientationLatencyMs }) {
-  if (!supabase) return noop('updateOrientationBlock');
+  let remote = null;
 
-  const { data, error } = await supabase
-    .from('orientation_blocks')
-    .update({
-      final_facing_direction: finalFacingDirection ?? null,
-      orientation_error_deg: orientationErrorDeg ?? null,
-      orientation_latency_ms: orientationLatencyMs ?? null,
-    })
-    .eq('id', blockId)
-    .select('id')
-    .single();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('orientation_blocks')
+      .update({
+        final_facing_direction: finalFacingDirection ?? null,
+        orientation_error_deg: orientationErrorDeg ?? null,
+        orientation_latency_ms: orientationLatencyMs ?? null,
+      })
+      .eq('id', blockId)
+      .select('id')
+      .single();
 
-  if (error) { console.error('[db.updateOrientationBlock]', error); return null; }
-  return data;
+    if (error) console.error('[db.updateOrientationBlock]', error);
+    else remote = data;
+  }
+
+  const row = local.recordBlockUpdate(blockId, {
+    finalFacingDirection, orientationErrorDeg, orientationLatencyMs,
+  });
+  return remote ?? row;
 }
 
 // ─── trials ───────────────────────────────────────────────
@@ -174,26 +201,37 @@ export async function createTrial({
   participantResponse, accuracy, reactionTimeMs, timeout,
   optionsShown, appVersion,
 }) {
-  if (!supabase) return noop('createTrial');
+  let remote = null;
 
-  const { data, error } = await supabase
-    .from('trials')
-    .insert({
-      block_id: blockId,
-      trial_index: trialIndex,
-      layout,
-      square_first: squareFirst,
-      correct_answer: correctAnswer,
-      participant_response: participantResponse,
-      accuracy,
-      reaction_time_ms: reactionTimeMs,
-      timeout,
-      options_shown: optionsShown,
-      app_version: appVersion ?? null,
-    })
-    .select('id')
-    .single();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('trials')
+      .insert({
+        block_id: blockId,
+        trial_index: trialIndex,
+        layout,
+        square_first: squareFirst,
+        correct_answer: correctAnswer,
+        participant_response: participantResponse,
+        accuracy,
+        reaction_time_ms: reactionTimeMs,
+        timeout,
+        options_shown: optionsShown,
+        app_version: appVersion ?? null,
+      })
+      .select('id')
+      .single();
 
-  if (error) { console.error('[db.createTrial] Failed to insert trial:', { blockId, trialIndex, correctAnswer }, error); return null; }
-  return data;
+    if (error) {
+      console.error('[db.createTrial] Failed to insert trial:', { blockId, trialIndex, correctAnswer }, error);
+    } else {
+      remote = data;
+    }
+  }
+
+  const row = local.recordTrial({
+    id: remote?.id, blockId, trialIndex, layout, squareFirst, correctAnswer,
+    participantResponse, accuracy, reactionTimeMs, timeout, optionsShown, appVersion,
+  });
+  return remote ?? row;
 }

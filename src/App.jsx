@@ -1,9 +1,18 @@
 import { useState } from "react";
 import NavigationLearningAppEGO from "./nla-ego-version.jsx";
 import NavigationLearningAppALLO from "./nla-allo-version.jsx";
+import Dashboard from "./dashboard.jsx";
+
+// Researcher view lives at ?view=dashboard — deliberately not linked from the
+// participant UI so nobody stumbles into it mid-experiment.
+function wantsDashboard() {
+  return new URLSearchParams(window.location.search).get("view") === "dashboard";
+}
 
 export default function App() {
   const [version, setVersion] = useState(() => localStorage.getItem('nla_version') || null);
+
+  if (wantsDashboard()) return <Dashboard />;
 
   const handleSetVersion = (v) => {
     localStorage.setItem('nla_version', v);
