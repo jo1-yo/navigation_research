@@ -285,7 +285,8 @@ const InstructionsScreen = ({ onContinue }) => (
       style={{ width: '80%', maxWidth: 280, borderRadius: '12px', marginBottom: 24, objectFit: 'contain' }}
     />
     <p style={{ fontSize: '15px', lineHeight: 1.7, color: '#333', textAlign: 'center', marginBottom: 32, maxWidth: 320 }}>
-      Please stand upright and hold your phone flat and level, as shown in the image, with the screen parallel to the ground.
+      Please stand upright and hold your phone up in front of you, screen facing you —
+      as if taking a photo of what is ahead. You will see the objects through the camera.
     </p>
     <button onClick={onContinue} style={{
       width: '100%', maxWidth: 300, padding: '16px', background: '#E67E22', color: 'white',
@@ -546,30 +547,14 @@ function headingToLabel(deg) {
 // ORIENTATION SCREEN - Real compass support
 const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused, isCompassWorking }) => {
   const [simulatedHeading, setSimulatedHeading] = useState(0);
-  const arrowRotRef = useRef(null);
 
   // Use real heading if available, fallback to simulation
   const currentHeading = (deviceHeading !== null && isCompassWorking) ? deviceHeading : simulatedHeading;
   const usingRealCompass = deviceHeading !== null && isCompassWorking;
 
-  const directionLabels = {
-    0: 'North', 45: 'Northeast', 90: 'East', 135: 'Southeast',
-    180: 'South', 225: 'Southwest', 270: 'West', 315: 'Northwest'
-  };
-
-  // Same logic as allo: arrow points up when facing target
+  // Same logic as allo: aligned when facing the target
   const diff = ((targetDirection - currentHeading) % 360 + 360) % 360;
-  const rawArrow = diff > 180 ? diff - 360 : diff; // -180 to 180
-
-  // Smooth CSS rotation: always take the shortest angular path to prevent 360° spin at ±180°
-  if (arrowRotRef.current === null) arrowRotRef.current = rawArrow;
-  const prevNorm = ((arrowRotRef.current % 360) + 360) % 360;
-  const prevSigned = prevNorm > 180 ? prevNorm - 360 : prevNorm;
-  let delta = rawArrow - prevSigned;
-  if (delta > 180) delta -= 360;
-  if (delta < -180) delta += 360;
-  const arrowRotation = arrowRotRef.current + delta;
-  arrowRotRef.current = arrowRotation;
+  const rawArrow = diff > 180 ? diff - 360 : diff; // -180 to 180, >0 → turn right
 
   const isAligned = Math.abs(rawArrow) < 15;
   
@@ -588,13 +573,14 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <NavBar showPause onPause={onPause} isPaused={isPaused} />
       
-      <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, padding: '16px', display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '22px', fontWeight: 600, marginBottom: 12 }}>Orientation</h1>
-        
+
         <p style={{ fontSize: '14px', lineHeight: 1.5, color: '#333', marginBottom: 16 }}>
-          Hold your phone <strong>flat on your palm</strong>. Turn your body to face the target direction.
+          Hold your phone <strong>upright in front of you</strong>. The dark arrow shows where
+          you are facing — turn your body until it lines up with the green target arrow.
         </p>
-        
+
         {/* Compass status indicator */}
         <div style={{
           textAlign: 'center', marginBottom: 12, padding: '10px 16px',
@@ -612,9 +598,10 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
             </>
           )}
         </div>
-        
-        {/* Arrow visualization */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+
+        {/* Arrow visualization — scrolls internally if the screen is short, so the
+            controls below (and the Continue button) always stay on-screen */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           {/* Real-time facing direction */}
           <div style={{
             marginBottom: 12, padding: '8px 20px', borderRadius: '20px',
@@ -628,32 +615,21 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
             </span>
           </div>
 
-          <div style={{ position: 'relative' }}>
-            {/* Main arrow (no N/E/S/W labels) */}
-            <svg viewBox="0 0 100 100" width="160" height="160"
-              style={{ transform: `rotate(${arrowRotation}deg)`, transition: 'transform 0.1s ease-out' }}>
-              <circle cx="50" cy="50" r="48" fill="none" stroke={isAligned ? '#4CAF50' : '#ddd'} strokeWidth="2" />
-              <circle cx="50" cy="50" r="45" fill="none" stroke="#ddd" strokeWidth="1" strokeDasharray="4,4" />
+          {/* AR view: facing arrow + world-anchored target arrow */}
+          <ARStage
+            variant="orient"
+            deviceHeading={currentHeading}
+            anchorBearing={targetDirection}
+            aligned={isAligned}
+          />
 
-              {/* Arrow */}
-              <path d="M50 8 L62 42 L54 42 L54 75 L46 75 L46 42 L38 42 Z"
-                fill={isAligned ? '#4CAF50' : '#E67E22'} />
-
-              {/* Center dot */}
-              <circle cx="50" cy="50" r="4" fill={isAligned ? '#4CAF50' : '#666'} />
-
-              {isAligned && (
-                <circle cx="50" cy="50" r="46" fill="none" stroke="#4CAF50" strokeWidth="4" opacity="0.5">
-                  <animate attributeName="r" from="46" to="50" dur="1s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.5" to="0" dur="1s" repeatCount="indefinite" />
-                </circle>
-              )}
-            </svg>
-          </div>
-
-          <div style={{ marginTop: 16, textAlign: 'center' }}>
-            <p style={{ fontSize: '14px', color: '#666' }}>
-              Rotate until the arrow points straight up
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <p style={{ fontSize: '16px', fontWeight: 600, color: isAligned ? '#2e7d32' : '#333' }}>
+              {isAligned
+                ? '✓ Facing the right direction'
+                : rawArrow > 0
+                  ? `Turn right ${Math.round(Math.abs(rawArrow))}° →`
+                  : `← Turn left ${Math.round(Math.abs(rawArrow))}°`}
             </p>
           </div>
         </div>
@@ -676,7 +652,7 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
         )}
         
         <p style={{ fontSize: '13px', color: '#888', textAlign: 'center', marginBottom: 12 }}>
-          {isAligned ? '✓ Perfect! You\'re facing the right direction!' : 'Keep rotating until the arrow points straight up'}
+          {isAligned ? '✓ Perfect! You\'re facing the right direction!' : 'Keep turning until the two arrows line up'}
         </p>
         
         {isAligned && (
@@ -716,7 +692,7 @@ const RestScreen = ({ onContinue }) => (
 );
 
 // Trial Screen
-const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false }) => {
+const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false, deviceHeading = null, anchorBearing = null }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
   const [localShowFeedback, setLocalShowFeedback] = useState(false);
@@ -794,7 +770,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <NavBar showPause onPause={onPause} isPaused={isPaused} />
-      <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column' }}>
         <p style={{ fontSize: '14px', color: '#888', marginBottom: 8 }}>Trial {trialNumber} of {totalTrials}</p>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -806,7 +782,12 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
         
         {/* Shapes — real 3D objects in front of the participant; depth, not screen
             position, now carries "closer / farther". */}
-        <ARStage layout={shapeConfig?.layout} squareFirst={shapeConfig?.squareFirst} />
+        <ARStage
+          layout={shapeConfig?.layout}
+          squareFirst={shapeConfig?.squareFirst}
+          deviceHeading={deviceHeading}
+          anchorBearing={anchorBearing}
+        />
         
         <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>From your perspective, the circle is _______ the square.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1063,7 +1044,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
         )}
         {screen === 'rest' && <RestScreen onContinue={handleRestDone} />}
         {screen === 'orientation' && <OrientationScreen targetDirection={targetDirections[orientationPhase]} deviceHeading={deviceHeading} onCalibrated={handleOrientationCalibrated} onPause={handlePause} isPaused={isPaused} isCompassWorking={isCompassWorking} />}
-        {screen === 'trial' && <TrialScreen key={`${orientationPhase}-${trialPhase}`} trialNumber={currentTrialNumber} totalTrials={totalTrials} shapeConfig={currentShapeConfig} onResponse={handleTrialResponse} isTimeout={isTrialTimeout} onPause={handlePause} isPaused={isPaused} showFeedback={sessionMode === 'training'} />}
+        {screen === 'trial' && <TrialScreen key={`${orientationPhase}-${trialPhase}`} trialNumber={currentTrialNumber} totalTrials={totalTrials} shapeConfig={currentShapeConfig} onResponse={handleTrialResponse} isTimeout={isTrialTimeout} onPause={handlePause} isPaused={isPaused} showFeedback={sessionMode === 'training'} deviceHeading={isCompassWorking ? deviceHeading : null} anchorBearing={targetDirections[orientationPhase]} />}
         {screen === 'results' && <ResultsScreen correctCount={sessionData.correctCount} totalTrials={totalTrials} streak={streak} avgTime={avgTime} onBackToHome={handleQuitToHome} />}
       </div>
       

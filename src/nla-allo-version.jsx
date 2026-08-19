@@ -362,7 +362,8 @@ const InstructionsScreen = ({ onContinue }) => (
       style={{ width: '80%', maxWidth: 280, borderRadius: '12px', marginBottom: 24, objectFit: 'contain' }}
     />
     <p style={{ fontSize: '15px', lineHeight: 1.7, color: '#333', textAlign: 'center', marginBottom: 32, maxWidth: 320 }}>
-      Please stand upright and hold your phone flat and level, as shown in the image, with the screen parallel to the ground.
+      Please stand upright and hold your phone up in front of you, screen facing you —
+      as if taking a photo of what is ahead. You will see the objects through the camera.
     </p>
     <button onClick={onContinue} style={{
       width: '100%', maxWidth: 300, padding: '16px', background: '#1a1a2e', color: 'white',
@@ -645,20 +646,22 @@ const ProfileTab = ({ participantCode, totalPoints, currentStreak, totalSessions
   </div>
 );
 
-// Orientation Screen
+// Orientation Screen — AR view: a dark arrow extends from the participant's feet
+// toward wherever they are currently facing, a green ghost arrow is anchored at
+// the block's target bearing, and rotating the body brings the two into line.
 const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPause, isPaused, showDirection = false }) => {
   const [simulatedHeading, setSimulatedHeading] = useState(0);
   const currentHeading = deviceHeading !== null ? deviceHeading : simulatedHeading;
-  
+
   const directionLabels = {
     0: 'North', 45: 'Northeast', 90: 'East', 135: 'Southeast',
     180: 'South', 225: 'Southwest', 270: 'West', 315: 'Northwest'
   };
-  
+
   const diff = ((targetDirection - currentHeading) % 360 + 360) % 360;
-  const arrowRotation = diff > 180 ? diff - 360 : diff;
-  const isAligned = Math.abs(arrowRotation) < 15;
-  
+  const signedDiff = diff > 180 ? diff - 360 : diff; // >0 → turn right
+  const isAligned = Math.abs(signedDiff) < 15;
+
   useEffect(() => {
     if (deviceHeading !== null || isPaused) return;
     const handleKeyDown = (e) => {
@@ -668,18 +671,19 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [deviceHeading, isPaused]);
-  
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <NavBar showPause onPause={onPause} isPaused={isPaused} />
-      
-      <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column' }}>
+
+      <div style={{ flex: 1, minHeight: 0, padding: '20px', display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 600, marginBottom: 16 }}>Orientation</h1>
-        
+
         <p style={{ fontSize: '14px', lineHeight: 1.6, color: '#333', marginBottom: 20 }}>
-          Place your phone flat on your palm. Face in the direction of the arrow.
+          Hold your phone upright in front of you. The dark arrow shows where you are
+          facing — turn your body until it lines up with the green target arrow.
         </p>
-        
+
         {deviceHeading === null && (
           <div style={{
             textAlign: 'center', marginBottom: 12, padding: '8px 16px',
@@ -690,23 +694,28 @@ const OrientationScreen = ({ targetDirection, deviceHeading, onCalibrated, onPau
             <span style={{ color: '#888', fontSize: '12px', display: 'block' }}> Use ← → keys or buttons</span>
           </div>
         )}
-        
-        {/* Arrow */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <svg viewBox="0 0 100 100" width="140" height="140"
-            style={{ transform: `rotate(${arrowRotation}deg)`, transition: 'transform 0.15s ease-out' }}>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#ddd" strokeWidth="1" strokeDasharray="4,4" />
-            <path d="M50 10 L65 45 L55 45 L55 80 L45 80 L45 45 L35 45 Z" fill={isAligned ? '#4CAF50' : '#1a1a2e'} />
-            {isAligned && <circle cx="50" cy="50" r="48" fill="none" stroke="#4CAF50" strokeWidth="3" opacity="0.5" />}
-          </svg>
-          
-          {showDirection ? (
-            <p style={{ fontSize: '15px', color: '#333', marginTop: 12, fontWeight: 600 }}>
+
+        {/* AR view: facing arrow + target needle. Scrolls internally if the screen
+            is short, so the Continue button below always stays on-screen. */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <ARStage
+            variant="orient"
+            deviceHeading={currentHeading}
+            anchorBearing={targetDirection}
+            aligned={isAligned}
+          />
+
+          <p style={{ fontSize: '16px', marginTop: 12, fontWeight: 600, color: isAligned ? '#2e7d32' : '#333' }}>
+            {isAligned
+              ? '✓ Facing the right direction'
+              : signedDiff > 0
+                ? `Turn right ${Math.round(Math.abs(signedDiff))}° →`
+                : `← Turn left ${Math.round(Math.abs(signedDiff))}°`}
+          </p>
+
+          {showDirection && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: 6 }}>
               Face <strong style={{ color: '#1a1a2e' }}>{directionLabels[targetDirection]}</strong>
-            </p>
-          ) : (
-            <p style={{ fontSize: '14px', color: '#666', marginTop: 12 }}>
-              Rotate until the arrow points straight up
             </p>
           )}
         </div>
@@ -762,7 +771,7 @@ const RestScreen = ({ onContinue }) => (
 );
 
 // Trial Screen
-const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false }) => {
+const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTimeout, onPause, isPaused, showFeedback = false, deviceHeading = null, anchorBearing = null }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
   const [localShowFeedback, setLocalShowFeedback] = useState(false);
@@ -847,7 +856,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <NavBar showPause onPause={onPause} isPaused={isPaused} />
       
-      <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column' }}>
         <p style={{ fontSize: '14px', color: '#888', marginBottom: 12 }}>Trial {trialNumber} of {totalTrials}</p>
         
         <div style={{
@@ -869,9 +878,15 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
           <span style={{ fontSize: '16px', fontWeight: 600, color: timeLeft <= 3 ? '#f44336' : '#666', minWidth: 28 }}>{timeLeft}s</span>
         </div>
         
-        {/* Shapes — real 3D objects laid out in front of the participant. Screen-up
-            is depth away from the body, matching dirMap8's "top" = facing direction. */}
-        <ARStage layout={shapeConfig?.layout} squareFirst={shapeConfig?.squareFirst} />
+        {/* Shapes — real 3D objects anchored to the block's target bearing. dirMap8's
+            "top" = the prescribed facing direction, which is where the array sits in
+            the world; turning the phone pans it across the frame like real objects. */}
+        <ARStage
+          layout={shapeConfig?.layout}
+          squareFirst={shapeConfig?.squareFirst}
+          deviceHeading={deviceHeading}
+          anchorBearing={anchorBearing}
+        />
         
         <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>
           Compared to the square, the circle is ______
@@ -1275,9 +1290,11 @@ export default function NavigationLearningAppALLO({ onSwitchVersion }) {
             onPause={handlePause}
             isPaused={isPaused}
             showFeedback={sessionMode === 'training'}
+            deviceHeading={deviceHeading}
+            anchorBearing={targetDirections[orientationPhase]}
           />
         )}
-        
+
         {screen === 'results' && (
           <ResultsScreen
             correctCount={sessionData.correctCount}

@@ -2,22 +2,32 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 /**
- * ARStage — camera-backed 3D presentation of the square + circle pair.
+ * ARStage — camera-backed 3D presentation, world-anchored to the compass.
  *
- * Replaces the old flat layout, where "closer / farther" was faked by moving a
- * div up and down the screen. Here the two objects live at real depths in front
- * of the participant, so "closer" means physically nearer to the body and the
- * usual depth cues (perspective size, height in the visual field, cast shadow)
- * all agree with the correct answer.
+ * Two variants:
  *
- * The array stays locked to the device's forward direction — each trial presents
- * it in front of whatever way the participant is currently facing. That matches
- * the paradigm: the ego answers are heading-independent, and the allo answers are
- * derived from heading by dirMap8, not from where the objects sit on screen.
+ * "trial"  — the square + circle pair at real depths in front of the participant.
+ *            When a compass heading and an anchor bearing are supplied, the pair is
+ *            anchored to that real-world bearing: the scene's -Z axis IS the block's
+ *            target direction, and the camera yaws opposite the device, so turning
+ *            the phone pans the objects across the frame exactly like physical
+ *            objects would. They no longer follow the camera.
+ *
+ * "orient" — the pre-block alignment step. Two arrows share one root, compass-needle
+ *            style, floating dead-centre in view so holding the phone up and filming
+ *            straight ahead is all it takes to see them. The dark facing arrow always
+ *            points straight up (= the way the body points); the green target arrow
+ *            pivots its TIP around the shared root by the heading error. Rotating the
+ *            body swings the green tip until the two arrows coincide, and `aligned`
+ *            recolors the facing arrow as confirmation.
+ *
+ * Without a heading (desktop, permission refused) the trial variant falls back to
+ * the previous device-locked behavior: array centered ahead, tilt parallax only.
  *
  * iOS Safari has no WebXR, so this is a camera feed with a perspective scene
- * composited on top rather than a world-anchored AR session. Nothing here needs
- * permissions beyond the camera, and it degrades to a plain backdrop if refused.
+ * composited on top rather than a tracked AR session. Yaw comes from the compass
+ * (webkitCompassHeading / alpha) and pitch from beta, which is enough for a
+ * participant standing in place and rotating — translation is not tracked.
  */
 
 // ─── tunables ─────────────────────────────────────────────
@@ -47,10 +57,21 @@ const GROUND_Y = -1.15;
 const CUBE_SIDE = 0.62;
 const SPHERE_R = 0.32;
 
-// How far the scene shifts when the phone is tilted. Motion parallax is what
-// makes the depth read as physical rather than drawn. Set to 0 for a rigid scene.
+// Downward pitch of the resting view — matches the old lookAt(0, OBJECT_Y, MID_Z)
+// framing so the anchored and fallback modes compose the scene identically.
+const BASE_PITCH = -Math.atan2(CAMERA_Y - OBJECT_Y, -MID_Z);
+
+// How far the scene shifts when the phone is tilted, in fallback mode only.
+// In anchored mode rotation IS the parallax, so the positional shim is off.
 const PARALLAX_STRENGTH = 0.32;
 const PARALLAX_MAX_DEG = 22;
+
+// Pitch tracking range in anchored mode (degrees of phone tilt honoured).
+const PITCH_TRACK_MAX_DEG = 30;
+
+// Per-frame easing toward the sensor pose. Low enough to swallow compass noise,
+// high enough that the world doesn't feel like it's floating on rubber bands.
+const POSE_EASE = 0.15;
 
 /**
  * Slot A is the "first" position (top / left / top-left), slot B its opposite —
@@ -70,13 +91,61 @@ function slotsFor(layout, squareFirst) {
     : { square: slot.B, circle: slot.A };
 }
 
+// Wrap any angle difference to (-180, 180].
+function wrapSigned(deg) {
+  const d = ((deg % 360) + 360) % 360;
+  return d > 180 ? d - 360 : d;
+}
+
+// Distance of the guide arrows from the eye, their height, and how far below the
+// view centre the shared root sits. Tip length is chosen so a fully sideways
+// needle (90° error) still keeps its tip inside a square frame.
+const ARROW_DIST = 3.2;
+const ARROW_H = 1.8;
+const ARROW_ROOT_Y = -0.9;
+
+// Flat arrow silhouette facing the viewer: a triangular head with slightly swept
+// barbs over a shaft that tapers toward the head — wider at the base, the way a
+// painted road arrow reads. The ROOT is at the local origin and the tip at
+// +ARROW_H, so rotating the mesh about z pivots the tip around the root,
+// compass-needle style, which is exactly how the orient variant animates it.
+function makeUprightArrow(color, opacity = 1) {
+  const s = new THREE.Shape();
+  s.moveTo(0, ARROW_H);            // tip
+  s.lineTo(0.50, ARROW_H - 0.59);  // right barb, swept slightly down
+  s.lineTo(0.11, ARROW_H - 0.52);  // notch where the head meets the shaft
+  s.lineTo(0.18, 0);               // shaft widens toward the base
+  s.lineTo(-0.18, 0);
+  s.lineTo(-0.11, ARROW_H - 0.52);
+  s.lineTo(-0.50, ARROW_H - 0.59);
+  s.closePath();
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: opacity === 1,
+    side: THREE.DoubleSide,
+  });
+  return { mesh: new THREE.Mesh(new THREE.ShapeGeometry(s), mat), mat };
+}
+
 // ─── component ────────────────────────────────────────────
 
-export default function ARStage({ layout, squareFirst, parallax = true }) {
+export default function ARStage({
+  layout,
+  squareFirst,
+  parallax = true,
+  deviceHeading = null,
+  anchorBearing = null,
+  variant = 'trial',
+  aligned = false,
+}) {
   const mountRef = useRef(null);
   const videoRef = useRef(null);
   const sceneRef = useRef(null);
   const [cameraError, setCameraError] = useState(null);
+
+  const anchored = deviceHeading !== null && anchorBearing !== null;
 
   // ── camera feed ──
   useEffect(() => {
@@ -125,6 +194,7 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
 
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
     camera.position.set(0, CAMERA_Y, 0);
+    camera.rotation.order = 'YXZ';
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -136,46 +206,90 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
 
-    // Lighting — one key light casting shadows, plus fill so the unlit faces of
-    // the cube stay readable against a bright camera feed.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.62));
-    const key = new THREE.DirectionalLight(0xffffff, 1.25);
-    key.position.set(1.6, 4.2, -1.2);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.left = -4;
-    key.shadow.camera.right = 4;
-    key.shadow.camera.top = 4;
-    key.shadow.camera.bottom = -4;
-    key.shadow.camera.near = 0.5;
-    key.shadow.camera.far = 12;
-    scene.add(key);
+    const disposables = [];
+    const rig = {
+      renderer,
+      scene,
+      camera,
+      cube: null,
+      sphere: null,
+      ghostArrow: null,
+      facingMat: null,
+      // Orient mode looks straight ahead — the arrows stand at eye level, so the
+      // participant just holds the phone up. Trials keep the slight downward gaze.
+      basePitch: variant === 'trial' ? BASE_PITCH : 0,
+      // Sensor pose targets, eased toward in the animate loop.
+      yaw: { current: 0, target: 0, initialized: false },
+      pitch: { current: 0, target: 0 },
+      parallax: { x: 0, y: 0 },
+      anchored: false,
+    };
 
-    // Invisible floor that receives only the contact shadows. Those shadows are
-    // the strongest signal that the objects sit at different distances.
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(40, 40),
-      new THREE.ShadowMaterial({ opacity: 0.28 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = GROUND_Y;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    if (variant === 'trial') {
+      // Lighting — one key light casting shadows, plus fill so the unlit faces of
+      // the cube stay readable against a bright camera feed.
+      scene.add(new THREE.AmbientLight(0xffffff, 0.62));
+      const key = new THREE.DirectionalLight(0xffffff, 1.25);
+      key.position.set(1.6, 4.2, -1.2);
+      key.castShadow = true;
+      key.shadow.mapSize.set(1024, 1024);
+      key.shadow.camera.left = -4;
+      key.shadow.camera.right = 4;
+      key.shadow.camera.top = 4;
+      key.shadow.camera.bottom = -4;
+      key.shadow.camera.near = 0.5;
+      key.shadow.camera.far = 12;
+      scene.add(key);
 
-    const material = () =>
-      new THREE.MeshStandardMaterial({ color: 0xe4e4e4, roughness: 0.62, metalness: 0.04 });
+      // Invisible floor that receives only the contact shadows. Those shadows are
+      // the strongest signal that the objects sit at different distances.
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(40, 40),
+        new THREE.ShadowMaterial({ opacity: 0.28 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = GROUND_Y;
+      ground.receiveShadow = true;
+      scene.add(ground);
+      disposables.push(ground.geometry, ground.material);
 
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(CUBE_SIDE, CUBE_SIDE, CUBE_SIDE), material());
-    cube.castShadow = true;
-    // A slight yaw shows two faces at once, which reads as solid immediately.
-    cube.rotation.y = THREE.MathUtils.degToRad(-22);
-    scene.add(cube);
+      const material = () =>
+        new THREE.MeshStandardMaterial({ color: 0xe4e4e4, roughness: 0.62, metalness: 0.04 });
 
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_R, 48, 32), material());
-    sphere.castShadow = true;
-    scene.add(sphere);
+      const cube = new THREE.Mesh(new THREE.BoxGeometry(CUBE_SIDE, CUBE_SIDE, CUBE_SIDE), material());
+      cube.castShadow = true;
+      // A slight yaw shows two faces at once, which reads as solid immediately.
+      cube.rotation.y = THREE.MathUtils.degToRad(-22);
+      scene.add(cube);
+      disposables.push(cube.geometry, cube.material);
 
-    const rig = { renderer, scene, camera, cube, sphere, parallax: { x: 0, y: 0 } };
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_R, 48, 32), material());
+      sphere.castShadow = true;
+      scene.add(sphere);
+      disposables.push(sphere.geometry, sphere.material);
+
+      rig.cube = cube;
+      rig.sphere = sphere;
+    } else {
+      // Orient variant. Both arrows are parented to the camera, so they float
+      // dead-centre in view no matter how the phone is held — the camera feed is
+      // what rotates behind them. They share one root, compass-needle style: the
+      // dark facing arrow always points straight up, and the green target arrow's
+      // TIP pivots around that root by the heading error (driven in animate).
+      // The target sits a touch farther so the facing arrow occludes it cleanly
+      // when the two coincide.
+      const ghost = makeUprightArrow(0x4caf50, 0.45);
+      ghost.mesh.position.set(0, ARROW_ROOT_Y, -ARROW_DIST - 0.05);
+      const facing = makeUprightArrow(0x37414e, 1);
+      facing.mesh.position.set(0, ARROW_ROOT_Y, -ARROW_DIST);
+      camera.add(ghost.mesh, facing.mesh);
+      scene.add(camera);
+      disposables.push(ghost.mat, ghost.mesh.geometry, facing.mat, facing.mesh.geometry);
+
+      rig.ghostArrow = ghost.mesh;
+      rig.facingMat = facing.mat;
+    }
+
     sceneRef.current = rig;
 
     const resize = () => {
@@ -193,11 +307,30 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
     let frame = 0;
     const animate = () => {
       frame = requestAnimationFrame(animate);
-      // Ease the camera toward the parallax target so tilting feels physical
-      // rather than jittery on noisy sensor data.
-      camera.position.x += (rig.parallax.x - camera.position.x) * 0.12;
-      camera.position.y += (CAMERA_Y + rig.parallax.y - camera.position.y) * 0.12;
-      camera.lookAt(0, OBJECT_Y, MID_Z);
+
+      if (rig.anchored) {
+        // World-anchored: the camera turns, the scene stays put. Ease along the
+        // shortest arc so compass noise (and the 359→0 wrap) never spins the view.
+        rig.yaw.current = wrapSigned(
+          rig.yaw.current + wrapSigned(rig.yaw.target - rig.yaw.current) * POSE_EASE
+        );
+        rig.pitch.current += (rig.pitch.target - rig.pitch.current) * POSE_EASE;
+        camera.position.set(0, CAMERA_Y, 0);
+        camera.rotation.y = -THREE.MathUtils.degToRad(rig.yaw.current);
+        camera.rotation.x = rig.basePitch + rig.pitch.current;
+      } else {
+        // Fallback: device-locked framing with the positional tilt parallax.
+        camera.position.x += (rig.parallax.x - camera.position.x) * 0.12;
+        camera.position.y += (CAMERA_Y + rig.parallax.y - camera.position.y) * 0.12;
+        camera.lookAt(0, OBJECT_Y, MID_Z);
+      }
+
+      // Compass needle: yaw.current is the eased signed heading error (facing −
+      // target), so this leans the green tip toward the target — right of the
+      // facing arrow when the participant must turn right — and the two arrows
+      // coincide exactly at alignment.
+      if (rig.ghostArrow) rig.ghostArrow.rotation.z = THREE.MathUtils.degToRad(rig.yaw.current);
+
       renderer.render(scene, camera);
     };
     animate();
@@ -206,29 +339,44 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
       cancelAnimationFrame(frame);
       observer.disconnect();
       sceneRef.current = null;
-      cube.geometry.dispose();
-      cube.material.dispose();
-      sphere.geometry.dispose();
-      sphere.material.dispose();
-      ground.geometry.dispose();
-      ground.material.dispose();
+      disposables.forEach(d => d.dispose());
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [variant]);
+
+  // ── world anchoring: feed the sensor yaw target ──
+  useEffect(() => {
+    const rig = sceneRef.current;
+    if (!rig) return;
+    rig.anchored = anchored;
+    if (!anchored) return;
+    rig.yaw.target = wrapSigned(deviceHeading - anchorBearing);
+    // Snap on the first reading so mounting mid-turn doesn't animate a sweep.
+    if (!rig.yaw.initialized) {
+      rig.yaw.current = rig.yaw.target;
+      rig.yaw.initialized = true;
+    }
+  }, [anchored, deviceHeading, anchorBearing]);
 
   // ── reposition on trial change ──
   useEffect(() => {
     const rig = sceneRef.current;
-    if (!rig) return;
+    if (!rig?.cube) return;
     const { square, circle } = slotsFor(layout, squareFirst);
     rig.cube.position.set(...square);
     rig.sphere.position.set(...circle);
-  }, [layout, squareFirst]);
+  }, [layout, squareFirst, variant]);
 
-  // ── tilt parallax ──
+  // ── alignment feedback on the facing arrow ──
   useEffect(() => {
-    if (!parallax || PARALLAX_STRENGTH === 0) return;
+    const rig = sceneRef.current;
+    if (rig?.facingMat) rig.facingMat.color.set(aligned ? 0x4caf50 : 0x37414e);
+  }, [aligned, variant]);
+
+  // ── device tilt: pitch tracking when anchored, positional parallax otherwise ──
+  useEffect(() => {
+    if (!parallax) return;
     let base = null;
 
     const handler = (e) => {
@@ -237,11 +385,16 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
       // First reading becomes the neutral pose, so the participant's natural
       // holding angle maps to a centred view rather than an off-axis one.
       if (!base) base = { gamma: e.gamma, beta: e.beta };
-      const clamp = (v) => Math.max(-PARALLAX_MAX_DEG, Math.min(PARALLAX_MAX_DEG, v));
-      const dx = clamp(e.gamma - base.gamma) / PARALLAX_MAX_DEG;
-      const dy = clamp(e.beta - base.beta) / PARALLAX_MAX_DEG;
-      rig.parallax.x = dx * PARALLAX_STRENGTH;
-      rig.parallax.y = -dy * PARALLAX_STRENGTH * 0.6;
+      if (rig.anchored) {
+        const dy = Math.max(-PITCH_TRACK_MAX_DEG, Math.min(PITCH_TRACK_MAX_DEG, e.beta - base.beta));
+        rig.pitch.target = THREE.MathUtils.degToRad(dy);
+      } else {
+        const clamp = (v) => Math.max(-PARALLAX_MAX_DEG, Math.min(PARALLAX_MAX_DEG, v));
+        const dx = clamp(e.gamma - base.gamma) / PARALLAX_MAX_DEG;
+        const dy = clamp(e.beta - base.beta) / PARALLAX_MAX_DEG;
+        rig.parallax.x = dx * PARALLAX_STRENGTH;
+        rig.parallax.y = -dy * PARALLAX_STRENGTH * 0.6;
+      }
     };
 
     window.addEventListener('deviceorientation', handler, true);
@@ -251,7 +404,9 @@ export default function ARStage({ layout, squareFirst, parallax = true }) {
   return (
     <div
       style={{
-        width: '100%',
+        // Capped against the viewport height so the square never pushes the
+        // controls below it off a phone screen (the app shell is a fixed 100dvh).
+        width: 'min(100%, 38dvh)',
         maxWidth: 320,
         aspectRatio: '1 / 1',
         position: 'relative',
