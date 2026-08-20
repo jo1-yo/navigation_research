@@ -696,7 +696,11 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
   const [localShowFeedback, setLocalShowFeedback] = useState(false);
-  const startTimeRef = useRef(Date.now());
+  // Deliberation clock. performance.now() is monotonic — Date.now() can jump
+  // (NTP sync, DST, manual clock change) and silently corrupt a reaction time.
+  const startTimeRef = useRef(performance.now());
+  const pausedMsRef = useRef(0);
+  const pauseStartRef = useRef(null);
   const timerRef = useRef(null);
   
   const [shuffledOptions, setShuffledOptions] = useState(() =>
@@ -708,9 +712,25 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     setSelectedAnswer(null);
     setLocalShowFeedback(false);
     setTimeLeft(15);
-    startTimeRef.current = Date.now();
+    startTimeRef.current = performance.now();
+    pausedMsRef.current = 0;
+    pauseStartRef.current = null;
     setShuffledOptions([...(shapeConfig?.options || ['closer than', 'farther than', 'to the left of', 'to the right of'])].sort(() => Math.random() - 0.5));
   }, [trialNumber, shapeConfig]);
+
+  // Time spent paused is not deliberation: bank each paused span and subtract it.
+  useEffect(() => {
+    if (isPaused) {
+      if (pauseStartRef.current === null) pauseStartRef.current = performance.now();
+    } else if (pauseStartRef.current !== null) {
+      pausedMsRef.current += performance.now() - pauseStartRef.current;
+      pauseStartRef.current = null;
+    }
+  }, [isPaused]);
+
+  /** Milliseconds from the question appearing to now, excluding paused spans. */
+  const deliberationMs = () =>
+    Math.round(performance.now() - startTimeRef.current - pausedMsRef.current);
 
   // Single timer effect — only one interval at a time. The updater stays pure
   // (StrictMode double-invokes updaters in dev, so a side effect inside one runs
@@ -739,7 +759,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   const handleSelect = (option) => {
     if (localShowFeedback || selectedAnswer || isPaused) return;
     if (timerRef.current) clearInterval(timerRef.current);
-    const reactionTime = Date.now() - startTimeRef.current;
+    const reactionTime = deliberationMs();
     const isCorrect = option === shapeConfig.correctAnswer;
     if (showFeedback) {
       if (isCorrect) playCorrectFeedback(); else playIncorrectFeedback();
