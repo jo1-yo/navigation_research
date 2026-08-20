@@ -280,7 +280,7 @@ const InstructionsScreen = ({ onContinue }) => (
   }}>
     <h1 style={{ fontSize: '22px', fontWeight: 600, marginBottom: 24 }}>Instructions</h1>
     <img
-      src="/ins.png"
+      src={`${import.meta.env.BASE_URL}ins.png`}
       alt="How to hold your phone"
       style={{ width: '80%', maxWidth: 280, borderRadius: '12px', marginBottom: 24, objectFit: 'contain' }}
     />
@@ -674,7 +674,7 @@ const RestScreen = ({ onContinue }) => (
   }}>
     <h2 style={{ fontSize: '22px', fontWeight: 600, marginBottom: 20 }}>Take a Break</h2>
     <img
-      src="/rest.png"
+      src={`${import.meta.env.BASE_URL}rest.png`}
       alt="Look around"
       style={{ width: '80%', maxWidth: 260, borderRadius: '12px', marginBottom: 20, objectFit: 'contain' }}
     />
