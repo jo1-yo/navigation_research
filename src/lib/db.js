@@ -48,8 +48,23 @@ export async function upsertParticipant(participantCode, deviceInfo = {}) {
         .select('id, participant_code')
         .single();
 
-      if (error) console.error('[db.upsertParticipant] INSERT failed:', error);
-      else remote = data;
+      if (data) {
+        remote = data;
+      } else if (error?.code === '23505') {
+        // SELECT-then-INSERT is not atomic: a concurrent call (React StrictMode
+        // double-runs mount effects in dev) can insert the row between our two
+        // statements. The row exists — fetch it instead of falling back to a
+        // local ID, which would poison every downstream foreign key.
+        const { data: raced } = await supabase
+          .from('participants')
+          .select('id, participant_code')
+          .eq('participant_code', participantCode)
+          .maybeSingle();
+        if (raced) remote = raced;
+        else console.error('[db.upsertParticipant] duplicate-key retry SELECT found nothing');
+      } else {
+        console.error('[db.upsertParticipant] INSERT failed:', error);
+      }
     }
   }
 

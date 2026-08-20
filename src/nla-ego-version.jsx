@@ -712,25 +712,29 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
     setShuffledOptions([...(shapeConfig?.options || ['closer than', 'farther than', 'to the left of', 'to the right of'])].sort(() => Math.random() - 0.5));
   }, [trialNumber, shapeConfig]);
 
-  // Single timer effect — only one interval at a time
+  // Single timer effect — only one interval at a time. The updater stays pure
+  // (StrictMode double-invokes updaters in dev, so a side effect inside one runs
+  // twice and double-inserts the timeout trial); the timeout itself fires from
+  // the effect below, guarded by a ref so it reports exactly once per trial.
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (isPaused || localShowFeedback || selectedAnswer !== null || timeLeft <= 0) return;
 
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-          onResponse(null, 15000);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeLeft(prev => Math.max(0, prev - 1));
     }, 1000);
 
     return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
   }, [trialNumber, isPaused, localShowFeedback, selectedAnswer, timeLeft, onResponse]);
+
+  const timeoutFiredRef = useRef(false);
+  useEffect(() => { timeoutFiredRef.current = false; }, [trialNumber, shapeConfig]);
+  useEffect(() => {
+    if (timeLeft === 0 && selectedAnswer === null && !localShowFeedback && !timeoutFiredRef.current) {
+      timeoutFiredRef.current = true;
+      onResponse(null, 15000);
+    }
+  }, [timeLeft, selectedAnswer, localShowFeedback, onResponse]);
   
   const handleSelect = (option) => {
     if (localShowFeedback || selectedAnswer || isPaused) return;
