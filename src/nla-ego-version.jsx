@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { feedbackCorrect, feedbackWrong } from './haptics.js';
-import { upsertParticipant, createSession, createOrientationBlock, updateOrientationBlock, createTrial, completeSession } from './lib/db.js';
+import { upsertParticipant, createSession, createOrientationBlock, updateOrientationBlock, createTrial, completeSession, getParticipantStats } from './lib/db.js';
 import ARStage from './ARStage.jsx';
 import { APP_VERSION } from './lib/appVersion.js';
 
@@ -841,16 +841,27 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showVersionModal, setShowVersionModal] = useState(false);
   
-  const [sessionsToday, setSessionsToday] = useState(1);
-  const [streak, setStreak] = useState(3);
-  const [totalPoints, setTotalPoints] = useState(350);
-  const [totalSessions, setTotalSessions] = useState(5);
-  const [totalCorrect, setTotalCorrect] = useState(48);
-  const [trainingHistory, setTrainingHistory] = useState([
-    { date: 'Jan 5, 2026', correct: 10, avgTime: 2340 },
-    { date: 'Jan 4, 2026', correct: 11, avgTime: 2120 }
-  ]);
-  
+  // Real usage stats, loaded from recorded sessions once the participant is
+  // known and refreshed after each completed run. Zeros until then — never mocked.
+  const [sessionsToday, setSessionsToday] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [totalCorrect, setTotalCorrect] = useState(0);
+  const [trainingHistory, setTrainingHistory] = useState([]);
+
+  const refreshStats = useCallback(async (participantId) => {
+    if (!participantId) return;
+    const s = await getParticipantStats(participantId);
+    if (!s) return;
+    setSessionsToday(s.sessionsToday);
+    setStreak(s.streak);
+    setTotalPoints(s.totalPoints);
+    setTotalSessions(s.totalSessions);
+    setTotalCorrect(s.totalCorrect);
+    setTrainingHistory(s.trainingHistory);
+  }, []);
+
   const { heading: deviceHeading, requestPermission } = useDeviceOrientation();
   const isCompassWorking = deviceHeading !== null;
 
@@ -866,7 +877,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
           upsertParticipant(data.participantCode, {
             deviceOs: navigator.userAgent,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }).then(p => { if (p) dbParticipantId.current = p.id; });
+          }).then(p => { if (p) { dbParticipantId.current = p.id; refreshStats(p.id); } });
         }
       } catch (e) { localStorage.removeItem('nla_participant_ego'); }
     }
@@ -980,7 +991,9 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
     }
   }, [trialPhase, orientationPhase, sessionData]);
 
-  // Upload session summary when results screen is shown (sessionData is guaranteed final)
+  // Upload session summary when results screen is shown (sessionData is guaranteed
+  // final), then re-pull stats so home/profile show recorded truth, not the
+  // optimistic in-memory increments.
   useEffect(() => {
     if (screen === 'results' && dbSessionId.current) {
       const validTimes = sessionData.responses.map(r => r.reactionTime).filter(t => t < 15000);
@@ -988,9 +1001,9 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
         totalCorrect: sessionData.correctCount,
         totalTrials: 12,
         avgReactionTimeMs: validTimes.length > 0 ? Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length) : 0,
-      });
+      }).then(() => refreshStats(dbParticipantId.current));
     }
-  }, [screen, sessionData]);
+  }, [screen, sessionData]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const handleTrialResponse = useCallback((response, reactionTime) => {
     const isTimeout = response === null;
@@ -1029,7 +1042,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
           upsertParticipant(data.participantCode, {
             deviceOs: navigator.userAgent,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }).then(p => { if (p) dbParticipantId.current = p.id; });
+          }).then(p => { if (p) { dbParticipantId.current = p.id; refreshStats(p.id); } });
         }} />}
         {screen === 'instructions' && <InstructionsScreen onContinue={() => setScreen('permissions')} />}
         {screen === 'permissions' && <PermissionsScreen onContinue={() => setScreen('dashboard')} onRequestPermission={requestPermission} />}

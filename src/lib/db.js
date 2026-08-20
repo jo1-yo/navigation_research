@@ -192,6 +192,78 @@ export async function updateOrientationBlock(blockId, { finalFacingDirection, or
   return remote ?? row;
 }
 
+// ─── participant stats ────────────────────────────────────
+
+// Local calendar day of a timestamp — day boundaries follow the participant's
+// clock, not UTC, so a session at 11pm counts toward the right day.
+function localDay(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/**
+ * Usage stats for one participant, computed from their actual session rows —
+ * this is what the home/profile screens show, so nothing here is ever mocked.
+ * Reads Supabase when configured (cross-device truth), otherwise the on-device
+ * mirror. Only sessions that ran to completion count.
+ *
+ * @param {string} participantId
+ * @returns {Promise<{
+ *   sessionsToday: number, streak: number, totalSessions: number,
+ *   totalCorrect: number, totalPoints: number,
+ *   trainingHistory: { date: string, correct: number, avgTime: number }[]
+ * } | null>}
+ */
+export async function getParticipantStats(participantId) {
+  let rows = null;
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('session_type, timestamp_start, timestamp_end, total_correct, avg_reaction_time_ms')
+      .eq('participant_id', participantId)
+      .order('timestamp_start', { ascending: false });
+    if (error) console.error('[db.getParticipantStats]', error);
+    else rows = data;
+  }
+
+  if (!rows) {
+    rows = local.readAll().sessions
+      .filter((s) => s.participant_id === participantId)
+      .sort((a, b) => (b.timestamp_start ?? '').localeCompare(a.timestamp_start ?? ''));
+  }
+
+  const completed = rows.filter((s) => s.timestamp_end != null && s.total_correct != null);
+
+  // Consecutive-day streak: walk back from today (or yesterday, so the streak
+  // isn't broken just because today's session hasn't happened yet).
+  const days = new Set(completed.map((s) => localDay(s.timestamp_start)));
+  let streak = 0;
+  const cursor = new Date();
+  if (!days.has(localDay(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (days.has(localDay(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  const today = localDay(Date.now());
+  return {
+    sessionsToday: completed.filter((s) => localDay(s.timestamp_start) === today).length,
+    streak,
+    totalSessions: completed.length,
+    totalCorrect: completed.reduce((a, s) => a + (s.total_correct ?? 0), 0),
+    // Same formula the results screen shows: 10 points per correct + 50 per session.
+    totalPoints: completed.reduce((a, s) => a + (s.total_correct ?? 0) * 10 + 50, 0),
+    trainingHistory: completed
+      .filter((s) => s.session_type === 'training')
+      .map((s) => ({
+        date: new Date(s.timestamp_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        correct: s.total_correct ?? 0,
+        avgTime: s.avg_reaction_time_ms ?? 0,
+      })),
+  };
+}
+
 // ─── trials ───────────────────────────────────────────────
 
 /**
