@@ -5,6 +5,14 @@ import {
   Progress, Segmented, Sheet, Alert, Glyph, Hint,
 } from './kit.jsx';
 import { Droplet, Avatar } from './Droplet.jsx';
+import { AVATAR_COLORS, readProfile, writeProfile, subscribeProfile } from '../lib/profile.js';
+
+/** The participant's chosen name and colour, kept live across screens. */
+function useProfile() {
+  const [profile, setProfile] = useState(readProfile);
+  useEffect(() => subscribeProfile(setProfile), []);
+  return profile;
+}
 
 /**
  * Every screen that is identical between the egocentric and allocentric versions,
@@ -220,6 +228,15 @@ export function ResultsScreen({ correctCount, totalTrials, streak, avgTime, poin
 
 // ─── tabs ─────────────────────────────────────────────────
 
+function useProfileName() {
+  return useProfile().displayName;
+}
+
+function greeting(name, code) {
+  if (name) return `Hi ${name}`;
+  return code ? `Participant ${code}` : undefined;
+}
+
 // Module scope, so the offer is made once per app launch rather than on every
 // return to this tab.
 let remindersOffered = false;
@@ -239,7 +256,7 @@ export function TrainingTab({ onStartSession, sessionsToday, participantCode, tr
   return (
     <Screen grouped>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <LargeTitle subtitle={participantCode ? `Participant ${participantCode}` : undefined}>
+        <LargeTitle subtitle={greeting(useProfileName(), participantCode)}>
           Training
         </LargeTitle>
         <Avatar size={40} onClick={onProfile} />
@@ -303,6 +320,8 @@ export function ProfileTab({
   participantCode, versionLabel, totalSessions, totalCorrect, totalPoints, streak,
   onSwitchVersion, onRemindersSetup,
 }) {
+  const profile = useProfile();
+  const [editing, setEditing] = useState(false);
   // Earned off recorded rows, never invented: 10 points a correct answer, 50 a
   // completed session, and thresholds on counts the participant actually reached.
   const badges = [
@@ -314,11 +333,18 @@ export function ProfileTab({
   return (
     <Screen grouped>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '4px 0 8px' }}>
-        <Avatar size={84} />
+        <Avatar size={84} onClick={() => setEditing(true)} label="Edit your name and avatar" />
         <div style={{ textAlign: 'center' }}>
-          <h1 style={{ ...T.title2, margin: 0 }}>{participantCode || 'Profile'}</h1>
-          <p style={{ ...T.subhead, color: C.secondary, margin: '2px 0 0' }}>{versionLabel}</p>
+          <h1 style={{ ...T.title2, margin: 0 }}>{profile.displayName || participantCode || 'Profile'}</h1>
+          <p style={{ ...T.subhead, color: C.secondary, margin: '2px 0 0' }}>
+            {/* The participant code is the research identity and always stays visible,
+                whatever they call themselves. */}
+            {profile.displayName && participantCode ? `${participantCode} · ` : ''}{versionLabel}
+          </p>
         </div>
+        <Button variant="tinted" full={false} onClick={() => setEditing(true)} style={{ minHeight: 36, padding: '8px 16px', ...T.footnote, fontWeight: 600 }}>
+          Edit name and avatar
+        </Button>
       </div>
 
       <SectionLabel>Your training</SectionLabel>
@@ -345,10 +371,76 @@ export function ProfileTab({
 
       <SectionLabel>Settings</SectionLabel>
       <Card>
+        <Row label="Name and avatar" value={profile.displayName || 'Not set'} onClick={() => setEditing(true)} />
         <Row label="Reminders" onClick={onRemindersSetup} />
         <Row label="Experiment version" value={versionLabel?.split(' ')[0]} onClick={onSwitchVersion} last />
       </Card>
+
+      {editing && <ProfileEditSheet onClose={() => setEditing(false)} />}
     </Screen>
+  );
+}
+
+/** Name and avatar colour. Nothing here touches the recorded data. */
+function ProfileEditSheet({ onClose }) {
+  const current = readProfile();
+  const [name, setName] = useState(current.displayName);
+  const [avatar, setAvatar] = useState(current.avatar);
+
+  const save = () => {
+    writeProfile({ displayName: name.trim().slice(0, 24), avatar });
+    onClose();
+  };
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <Avatar size={88} color={avatar} />
+        </div>
+
+        <div>
+          <SectionLabel>What should we call you?</SectionLabel>
+          <Card>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              maxLength={24}
+              autoCapitalize="words"
+              style={{
+                ...T.body, width: '100%', border: 'none', outline: 'none',
+                background: 'transparent', padding: `13px ${SP.gutter}px`,
+                color: C.label, fontFamily: 'inherit',
+              }}
+            />
+          </Card>
+        </div>
+
+        <div>
+          <SectionLabel>Colour</SectionLabel>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: `2px ${SP.gutter}px` }}>
+            {Object.keys(AVATAR_COLORS).map((key) => (
+              <button
+                key={key}
+                onClick={() => setAvatar(key)}
+                aria-label={key}
+                style={{
+                  border: key === avatar ? `2.5px solid ${C.accent}` : '2.5px solid transparent',
+                  borderRadius: '50%', padding: 2, background: 'none', cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent', lineHeight: 0,
+                }}
+              >
+                <Avatar size={52} color={key} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Button onClick={save}>Save</Button>
+        <Button variant="plain" onClick={onClose}>Cancel</Button>
+      </div>
+    </Sheet>
   );
 }
 
