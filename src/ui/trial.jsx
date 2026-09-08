@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { C, T, R, SP, SAFE, FONT, CONTENT_MAX } from './theme.js';
-import { NavBar, IconButton, Button, Glyph, Hint, Screen } from './kit.jsx';
+import { NavBar, IconButton, Button, Hint, Screen } from './kit.jsx';
+import { Droplet } from './Droplet.jsx';
 import ARStage from '../ARStage.jsx';
 import { feedbackCorrect, feedbackWrong } from '../haptics.js';
 
@@ -189,7 +190,7 @@ export function TrialScreen({
       <>
         <NavBar title={`Trial ${trialNumber}`} right={<IconButton name="pause" onClick={onPause} label="Pause" />} />
         <Screen center top={false}>
-          <div style={{ alignSelf: 'center', color: C.secondary }}><Glyph name="clock" size={56} strokeWidth={1.4} /></div>
+          <div style={{ alignSelf: 'center' }}><Droplet mood="sad" size={96} /></div>
           <h2 style={{ ...T.title2, textAlign: 'center', margin: 0 }}>Time&rsquo;s up</h2>
           <Hint>You have {TRIAL_SECONDS} seconds to answer each trial.</Hint>
         </Screen>
@@ -199,7 +200,7 @@ export function TrialScreen({
 
   const optionStyle = (option) => {
     const base = {
-      minHeight: 52, padding: '14px 12px', borderRadius: R.control, ...T.headline,
+      minHeight: 50, padding: '13px 12px', borderRadius: R.control, ...T.headline,
       // Frosted white over the camera: legible on any scene without hiding it.
       background: 'rgba(255,255,255,0.92)',
       backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
@@ -229,8 +230,10 @@ export function TrialScreen({
         anchorBearing={anchorBearing}
       />
 
-      {/* Top: counter, pause, countdown. The scrim never takes a tap; the button
-          opts back in. */}
+      {/* Top: counter, pause, countdown and the question. The question lives up
+          here because the objects sit low in the frame — see the geometry notes in
+          ARStage — and reading top to bottom (ask, look, answer) follows the
+          screen anyway. The scrim never takes a tap; the button opts back in. */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none',
         padding: `calc(${SAFE.top} + 6px) 0 22px`,
@@ -257,19 +260,19 @@ export function TrialScreen({
             fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right',
           }}>{timeLeft}</span>
         </div>
+        <p style={{ ...T.headline, color: C.onDark, margin: '14px 0 0' }}>{question}</p>
         </div>
       </div>
 
-      {/* Bottom: the question and the four answers. Its height sets how far down
-          the objects may sit — see FILL_LOOK_Y in ARStage. */}
+      {/* Bottom: just the four answers. Every point of height here is height the
+          nearest object cannot use, so nothing else lives in this panel. */}
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
-        padding: `32px 0 calc(${SAFE.bottom} + 14px)`,
-        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 26%, rgba(0,0,0,0.78) 100%)',
+        padding: `16px 0 calc(${SAFE.bottom} + 14px)`,
+        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.75) 100%)',
       }}>
         <div style={{ width: '100%', maxWidth: CONTENT_MAX, margin: '0 auto', padding: `0 ${SP.gutter}px` }}>
-        <p style={{ ...T.headline, color: C.onDark, margin: `0 0 12px` }}>{question}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {shuffled.map((option) => (
             <button key={option} onClick={() => choose(option)} disabled={feedbackShown || selected !== null || isPaused} style={optionStyle(option)}>
               {option}

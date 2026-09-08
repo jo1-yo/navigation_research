@@ -35,34 +35,48 @@ import * as THREE from 'three';
 
 // ─── tunables ─────────────────────────────────────────────
 
-// Depth of each slot, in metres in front of the participant.
+// Depth of each slot, in metres in front of the participant. The far slot sits
+// further out than the near/mid spacing alone would suggest: with the objects on
+// the floor and the pair only 18° below the eye line, the far object's bottom edge
+// and the near object's top edge come close enough to read as one blob, and depth
+// is what buys the separation back.
 const NEAR_Z = -2.0;
-const FAR_Z = -4.6;
+const FAR_Z = -5.5;
 const MID_Z = -3.1;
 
-// The view looks slightly down onto the objects, the way you would see two things
-// set on the ground ahead of you. Eye-level framing pushed the near object right
-// on top of the far one and the pair became hard to tell apart — the participant
-// has to read both shapes to answer, so occlusion is a defect, not a depth cue.
-const CAMERA_Y = 0.95;
+// The scene is metres, with the FLOOR at y = 0 and the eye at standing height.
+// Objects rest on the floor and the camera looks very nearly level, which is what
+// you actually see holding a phone up in front of you: two things on the ground
+// ahead, low in the frame. The earlier framing tilted the virtual camera 29° down
+// while the real camera stayed level, so the objects were drawn in a downward
+// perspective over a level scene — it read as "these are on the floor, point the
+// phone down" and participants did exactly that.
+//
+// The camera cannot be perfectly level, and the objects cannot be at eye height:
+// in the near/far layout both sit on the same line of sight, so raising them to
+// eye level puts the near one straight on top of the far one. Occlusion is a
+// defect, not a depth cue — the participant has to read both shapes to answer.
+// The floor gives the pair the vertical separation that avoids it, and 18° of
+// downward pitch — against the 29-33° it used to be — puts the pair in the lower
+// middle of the frame with the phone held level. 18 is the smallest pitch that
+// keeps the nearest object clear of the answer panel: the near cube's closest
+// bottom CORNER, not its centre, is what reaches lowest (the -22° yaw brings it
+// to 1.54 m when the cube's centre is at 2.0 m).
+const GROUND_Y = 0;
+const CAMERA_Y = 1.6;
+const FILL_PITCH_DEG = -18;
 
-// Lateral offset for the left/right slots. Full-bleed framing is narrower than the
-// old square (a phone screen is much taller than it is wide), so the pair is pulled
-// in to keep both objects — and their outer edges — comfortably inside the frame at
-// FILL_H_FOV. Their positions as a FRACTION of the frame are close to what the
-// square showed; the objects themselves are what got bigger.
-const SIDE_X = 0.85;
-const DIAG_X = 0.40;
-
-// Objects sit below eye level, so nearer ones also fall lower in the frame —
-// the same cue you get looking down at two things on the floor in front of you.
-const OBJECT_Y = -0.55;
-const GROUND_Y = -1.15;
+// Lateral offset for the left/right slots, set so each object's OUTER EDGE stays
+// inside the frame at FILL_H_FOV — the near diagonal slot is the binding case,
+// since a nearby object is both far off-axis and large.
+const SIDE_X = 0.82;
+const DIAG_X = 0.38;
 
 // Physical size is identical for both shapes, so any apparent size difference is
-// purely a depth cue and never a confound.
-const CUBE_SIDE = 0.62;
-const SPHERE_R = 0.32;
+// purely a depth cue and never a confound. Both are ~15% larger than they were:
+// at 3.1 m the pair renders about 125 px wide on a 393 pt screen, against 108 px.
+const CUBE_SIDE = 0.71;
+const SPHERE_R = 0.37;
 
 // Horizontal field of view, in degrees. It is the HORIZONTAL angle that is locked
 // and the vertical that follows the container's aspect, so the pair frames the same
@@ -72,10 +86,6 @@ const SQUARE_H_FOV = 60;
 // Narrower on the full-bleed screen: less angle across the same (wider) canvas is
 // what makes the objects render ~1.5x larger than they did in the 320px square.
 const FILL_H_FOV = 50;
-
-// Where the resting view looks. Full-bleed drops the aim a little further down so
-// the pair sits above the answer panel rather than behind it.
-const FILL_LOOK_Y = OBJECT_Y - 0.22;
 
 // How far the scene shifts when the phone is tilted, in fallback mode only.
 // In anchored mode rotation IS the parallax, so the positional shim is off.
@@ -91,13 +101,15 @@ const POSE_EASE = 0.15;
 
 /**
  * Slot A is the "first" position (top / left / top-left), slot B its opposite —
- * matching how squareFirst was read in the flat version.
+ * matching how squareFirst was read in the flat version. Each slot is (x, z) only:
+ * the height comes from the shape, because both shapes REST ON THE FLOOR and a
+ * cube and a sphere have their centres at different heights when they do.
  */
 const SLOTS = {
-  horizontal: { A: [-SIDE_X, OBJECT_Y, MID_Z], B: [SIDE_X, OBJECT_Y, MID_Z] },
-  vertical: { A: [0, OBJECT_Y, FAR_Z], B: [0, OBJECT_Y, NEAR_Z] },
-  'diag-nwse': { A: [-DIAG_X, OBJECT_Y, FAR_Z], B: [DIAG_X, OBJECT_Y, NEAR_Z] },
-  'diag-nesw': { A: [DIAG_X, OBJECT_Y, FAR_Z], B: [-DIAG_X, OBJECT_Y, NEAR_Z] },
+  horizontal: { A: [-SIDE_X, MID_Z], B: [SIDE_X, MID_Z] },
+  vertical: { A: [0, FAR_Z], B: [0, NEAR_Z] },
+  'diag-nwse': { A: [-DIAG_X, FAR_Z], B: [DIAG_X, NEAR_Z] },
+  'diag-nesw': { A: [DIAG_X, FAR_Z], B: [-DIAG_X, NEAR_Z] },
 };
 
 function slotsFor(layout, squareFirst) {
@@ -210,7 +222,6 @@ export default function ARStage({
     const scene = new THREE.Scene();
 
     const hFov = fill ? FILL_H_FOV : SQUARE_H_FOV;
-    const lookY = fill ? FILL_LOOK_Y : OBJECT_Y;
     const camera = new THREE.PerspectiveCamera(hFov, 1, 0.1, 100);
     camera.position.set(0, CAMERA_Y, 0);
     camera.rotation.order = 'YXZ';
@@ -236,7 +247,7 @@ export default function ARStage({
       facingMat: null,
       // Orient mode looks straight ahead — the arrows stand at eye level, so the
       // participant just holds the phone up. Trials keep the slight downward gaze.
-      basePitch: variant === 'trial' ? -Math.atan2(CAMERA_Y - lookY, -MID_Z) : 0,
+      basePitch: variant === 'trial' ? THREE.MathUtils.degToRad(FILL_PITCH_DEG) : 0,
       // Sensor pose targets, eased toward in the animate loop.
       yaw: { current: 0, target: 0, initialized: false },
       pitch: { current: 0, target: 0 },
@@ -249,7 +260,7 @@ export default function ARStage({
       // the cube stay readable against a bright camera feed.
       scene.add(new THREE.AmbientLight(0xffffff, 0.62));
       const key = new THREE.DirectionalLight(0xffffff, 1.25);
-      key.position.set(1.6, 4.2, -1.2);
+      key.position.set(1.6, 5.0, -1.2);
       key.castShadow = true;
       key.shadow.mapSize.set(1024, 1024);
       key.shadow.camera.left = -4;
@@ -257,7 +268,7 @@ export default function ARStage({
       key.shadow.camera.top = 4;
       key.shadow.camera.bottom = -4;
       key.shadow.camera.near = 0.5;
-      key.shadow.camera.far = 12;
+      key.shadow.camera.far = 16;
       scene.add(key);
 
       // Invisible floor that receives only the contact shadows. Those shadows are
@@ -344,10 +355,13 @@ export default function ARStage({
         camera.rotation.y = -THREE.MathUtils.degToRad(rig.yaw.current);
         camera.rotation.x = rig.basePitch + rig.pitch.current;
       } else {
-        // Fallback: device-locked framing with the positional tilt parallax.
+        // Fallback: the same framing, with the tilt parallax as a small camera
+        // translation. Sharing basePitch with the anchored branch is what keeps
+        // desktop and phone composing the scene identically.
         camera.position.x += (rig.parallax.x - camera.position.x) * 0.12;
         camera.position.y += (CAMERA_Y + rig.parallax.y - camera.position.y) * 0.12;
-        camera.lookAt(0, lookY, MID_Z);
+        camera.rotation.y = 0;
+        camera.rotation.x = rig.basePitch;
       }
 
       // Compass needle: yaw.current is the eased signed heading error (facing −
@@ -389,8 +403,9 @@ export default function ARStage({
     const rig = sceneRef.current;
     if (!rig?.cube) return;
     const { square, circle } = slotsFor(layout, squareFirst);
-    rig.cube.position.set(...square);
-    rig.sphere.position.set(...circle);
+    // Sitting on the floor means the centre is half a side (or one radius) up.
+    rig.cube.position.set(square[0], GROUND_Y + CUBE_SIDE / 2, square[1]);
+    rig.sphere.position.set(circle[0], GROUND_Y + SPHERE_R, circle[1]);
   }, [layout, squareFirst, variant]);
 
   // ── alignment feedback on the facing arrow ──

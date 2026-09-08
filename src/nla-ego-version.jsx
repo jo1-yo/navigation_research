@@ -127,6 +127,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
   // known and refreshed after each completed run. Zeros until then — never mocked.
   const [sessionsToday, setSessionsToday] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [totalPoints, setTotalPoints] = useState(0);
   const [totalSessions, setTotalSessions] = useState(0);
   const [totalCorrect, setTotalCorrect] = useState(0);
   const [trainingHistory, setTrainingHistory] = useState([]);
@@ -137,6 +138,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
     if (!s) return;
     setSessionsToday(s.sessionsToday);
     setStreak(s.streak);
+    setTotalPoints(s.totalPoints);
     setTotalSessions(s.totalSessions);
     setTotalCorrect(s.totalCorrect);
     setTrainingHistory(s.trainingHistory);
@@ -240,6 +242,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
     else {
       const times = sessionData.responses.map(r => r.reactionTime).filter(t => t < 15000);
       const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
+      setTotalPoints(prev => prev + sessionData.correctCount * 10 + 50);
       setTotalSessions(prev => prev + 1);
       setTotalCorrect(prev => prev + sessionData.correctCount);
       setSessionsToday(prev => prev + 1);
@@ -324,6 +327,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
               sessionsToday={sessionsToday}
               participantCode={participantData?.participantCode}
               trainingHistory={trainingHistory}
+              onProfile={() => setActiveTab('profile')}
             />
           )}
           {activeTab === 'testing' && <TestingTab onStartTest={handleStartTest} />}
@@ -333,6 +337,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
               versionLabel="Egocentric"
               totalSessions={totalSessions}
               totalCorrect={totalCorrect}
+              totalPoints={totalPoints}
               streak={streak}
               onSwitchVersion={() => setShowVersionModal(true)}
               onRemindersSetup={() => window.dispatchEvent(new Event('nla:open-reminders'))}
@@ -377,6 +382,7 @@ export default function NavigationLearningAppEGO({ onSwitchVersion }) {
           totalTrials={totalTrials}
           streak={streak}
           avgTime={avgTime}
+          points={sessionData.correctCount * 10 + 50}
           onBackToHome={handleQuitToHome}
         />
       )}

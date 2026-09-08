@@ -4,6 +4,7 @@ import {
   Screen, LargeTitle, Button, Card, Row, SectionLabel, Metric,
   Progress, Segmented, Sheet, Alert, Glyph, Hint,
 } from './kit.jsx';
+import { Droplet, Avatar } from './Droplet.jsx';
 
 /**
  * Every screen that is identical between the egocentric and allocentric versions,
@@ -35,7 +36,10 @@ export function LoginScreen({ versionLabel, onLogin }) {
 
   return (
     <Screen center grouped>
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ alignSelf: 'center' }}>
+        <Droplet mood="excited" size={72} />
+      </div>
+      <div style={{ marginBottom: 8, textAlign: 'center' }}>
         <LargeTitle subtitle={versionLabel}>Navigation Learning</LargeTitle>
       </div>
 
@@ -175,7 +179,7 @@ export function RestScreen({ onContinue }) {
 export function TimeoutScreen() {
   return (
     <Screen center>
-      <div style={{ alignSelf: 'center', color: C.secondary }}><Glyph name="clock" size={56} strokeWidth={1.4} /></div>
+      <div style={{ alignSelf: 'center' }}><Droplet mood="sad" size={96} /></div>
       <h2 style={{ ...T.title2, textAlign: 'center', margin: 0 }}>Time&rsquo;s up</h2>
       <Hint>You have 15 seconds to answer each trial.</Hint>
     </Screen>
@@ -184,9 +188,13 @@ export function TimeoutScreen() {
 
 // ─── results ──────────────────────────────────────────────
 
-export function ResultsScreen({ correctCount, totalTrials, streak, avgTime, onBackToHome }) {
+export function ResultsScreen({ correctCount, totalTrials, streak, avgTime, points, onBackToHome }) {
   return (
     <Screen center grouped>
+      <div style={{ alignSelf: 'center' }}>
+        <Droplet mood={correctCount >= 10 ? 'excited' : 'happy'} size={92} />
+      </div>
+
       <div style={{ textAlign: 'center' }}>
         <div style={{ ...T.largeTitle, fontSize: 56, color: C.label, fontVariantNumeric: 'tabular-nums' }}>
           {correctCount}<span style={{ color: C.tertiary }}>/{totalTrials}</span>
@@ -194,10 +202,14 @@ export function ResultsScreen({ correctCount, totalTrials, streak, avgTime, onBa
         <p style={{ ...T.body, color: C.secondary, margin: '2px 0 0' }}>correct this session</p>
       </div>
 
+      {points != null && (
+        <p style={{ ...T.title3, color: C.green, textAlign: 'center', margin: 0 }}>+{points} points</p>
+      )}
+
       <Card style={{ display: 'flex' }}>
         <Metric value={avgTime ? `${(avgTime / 1000).toFixed(1)}s` : '—'} label="Average time" />
         <div style={{ width: '0.5px', background: C.separator }} />
-        <Metric value={streak} label={streak === 1 ? 'Day streak' : 'Day streak'} />
+        <Metric value={streak} label="Day streak" />
       </Card>
 
       <div style={{ flex: '0 0 8px' }} />
@@ -212,7 +224,7 @@ export function ResultsScreen({ correctCount, totalTrials, streak, avgTime, onBa
 // return to this tab.
 let remindersOffered = false;
 
-export function TrainingTab({ onStartSession, sessionsToday, participantCode, trainingHistory, target = 4 }) {
+export function TrainingTab({ onStartSession, sessionsToday, participantCode, trainingHistory, onProfile, target = 4 }) {
   const [view, setView] = useState('today');
 
   // Reaching the home screen is the first moment when a sheet cannot cover
@@ -226,9 +238,12 @@ export function TrainingTab({ onStartSession, sessionsToday, participantCode, tr
 
   return (
     <Screen grouped>
-      <LargeTitle subtitle={participantCode ? `Participant ${participantCode}` : undefined}>
-        Training
-      </LargeTitle>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <LargeTitle subtitle={participantCode ? `Participant ${participantCode}` : undefined}>
+          Training
+        </LargeTitle>
+        <Avatar size={40} onClick={onProfile} />
+      </div>
 
       <Segmented
         value={view}
@@ -285,18 +300,48 @@ export function TestingTab({ onStartTest }) {
 }
 
 export function ProfileTab({
-  participantCode, versionLabel, totalSessions, totalCorrect, streak, onSwitchVersion, onRemindersSetup,
+  participantCode, versionLabel, totalSessions, totalCorrect, totalPoints, streak,
+  onSwitchVersion, onRemindersSetup,
 }) {
+  // Earned off recorded rows, never invented: 10 points a correct answer, 50 a
+  // completed session, and thresholds on counts the participant actually reached.
+  const badges = [
+    { label: '3-day streak', earned: streak >= 3 },
+    { label: 'Week warrior', earned: streak >= 7 },
+    { label: '10 sessions', earned: totalSessions >= 10 },
+    { label: '100 correct', earned: totalCorrect >= 100 },
+  ].filter((b) => b.earned);
   return (
     <Screen grouped>
-      <LargeTitle subtitle={versionLabel}>{participantCode || 'Profile'}</LargeTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '4px 0 8px' }}>
+        <Avatar size={84} />
+        <div style={{ textAlign: 'center' }}>
+          <h1 style={{ ...T.title2, margin: 0 }}>{participantCode || 'Profile'}</h1>
+          <p style={{ ...T.subhead, color: C.secondary, margin: '2px 0 0' }}>{versionLabel}</p>
+        </div>
+      </div>
 
       <SectionLabel>Your training</SectionLabel>
       <Card>
+        <Row label="Points" value={totalPoints ?? 0} />
         <Row label="Day streak" value={streak} />
         <Row label="Sessions completed" value={totalSessions} />
         <Row label="Correct answers" value={totalCorrect} last />
       </Card>
+
+      {badges.length > 0 && (
+        <>
+          <SectionLabel>Earned</SectionLabel>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: `0 ${SP.gutter}px` }}>
+            {badges.map((b) => (
+              <span key={b.label} style={{
+                ...T.footnote, fontWeight: 600, color: C.accent,
+                background: 'rgba(0,122,255,0.12)', borderRadius: R.pill, padding: '6px 12px',
+              }}>{b.label}</span>
+            ))}
+          </div>
+        </>
+      )}
 
       <SectionLabel>Settings</SectionLabel>
       <Card>
