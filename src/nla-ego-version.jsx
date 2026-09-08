@@ -363,7 +363,6 @@ const PermissionsScreen = ({ onContinue, onRequestPermission }) => {
       {[
         { icon: '🧭', title: 'Device Orientation (Required)', desc: 'To detect which direction you\'re facing - this is essential for the training!' },
         { icon: '📍', title: 'Location Services', desc: 'To determine absolute directions' },
-        { icon: '🔔', title: 'Notifications', desc: 'To receive training reminders' }
       ].map((item, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
           <span style={{ fontSize: '20px' }}>{item.icon}</span>
@@ -770,7 +769,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   };
 
   const getButtonStyle = (option) => {
-    const base = { padding: '16px 18px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '17px', cursor: (localShowFeedback || selectedAnswer || isPaused) ? 'default' : 'pointer', background: 'white', fontWeight: 500 };
+    const base = { padding: '15px 12px', border: '1px solid rgba(255,255,255,0.65)', borderRadius: '10px', fontSize: '16px', cursor: (localShowFeedback || selectedAnswer || isPaused) ? 'default' : 'pointer', background: 'rgba(255,255,255,0.94)', color: '#1a1a2e', fontWeight: 500, backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' };
     if (showFeedback && localShowFeedback && selectedAnswer) {
       if (option === shapeConfig.correctAnswer) return { ...base, background: '#4CAF50', color: 'white', borderColor: '#4CAF50' };
       if (option === selectedAnswer && option !== shapeConfig.correctAnswer) return { ...base, background: '#f44336', color: 'white', borderColor: '#f44336' };
@@ -792,28 +791,62 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
   }
   
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <NavBar showPause onPause={onPause} isPaused={isPaused} />
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column' }}>
-        <p style={{ fontSize: '14px', color: '#888', marginBottom: 8 }}>Trial {trialNumber} of {totalTrials}</p>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={{ flex: 1, height: 8, background: '#e0e0e0', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${(timeLeft / 15) * 100}%`, height: '100%', background: timeLeft <= 3 ? '#f44336' : timeLeft <= 5 ? '#FF9800' : '#F39C12', transition: 'width 1s linear' }} />
-          </div>
-          <span style={{ fontSize: '16px', fontWeight: 600, color: timeLeft <= 3 ? '#f44336' : '#666', minWidth: 28 }}>{timeLeft}s</span>
+    <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', background: '#111' }}>
+      {/* The camera view fills the screen; the question and answers float on top of
+          it. Nothing steals height from the objects any more, and at this framing
+          they render about 1.5x larger than they did inside the old square. */}
+      <ARStage
+        fill
+        layout={shapeConfig?.layout}
+        squareFirst={shapeConfig?.squareFirst}
+        deviceHeading={deviceHeading}
+        anchorBearing={anchorBearing}
+      />
+
+      {/* Top scrim: trial counter, pause, countdown. pointerEvents stays off so the
+          scrim never swallows a tap meant for the scene; the button opts back in. */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 16px 22px',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.3) 60%, rgba(0,0,0,0) 100%)',
+        color: 'white',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: '13px', fontWeight: 500, textShadow: '0 1px 3px rgba(0,0,0,0.7)' }}>
+            Trial {trialNumber} of {totalTrials}
+          </span>
+          <button onClick={onPause} style={{
+            pointerEvents: 'auto',
+            background: isPaused ? '#4CAF50' : 'rgba(255,255,255,0.2)',
+            border: '1px solid rgba(255,255,255,0.55)', borderRadius: '50%',
+            width: 34, height: 34, cursor: 'pointer', fontSize: '13px', color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+          }}>{isPaused ? '\u25b6' : '\u23f8'}</button>
         </div>
-        
-        {/* Shapes — real 3D objects in front of the participant; depth, not screen
-            position, now carries "closer / farther". */}
-        <ARStage
-          layout={shapeConfig?.layout}
-          squareFirst={shapeConfig?.squareFirst}
-          deviceHeading={deviceHeading}
-          anchorBearing={anchorBearing}
-        />
-        
-        <p style={{ fontSize: '17px', marginBottom: 14, fontWeight: 500 }}>From your perspective, the circle is _______ the square.</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.3)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              width: `${(timeLeft / 15) * 100}%`, height: '100%',
+              background: timeLeft <= 3 ? '#f44336' : timeLeft <= 5 ? '#FF9800' : '#F39C12',
+              transition: 'width 1s linear',
+            }} />
+          </div>
+          <span style={{ fontSize: '14px', fontWeight: 600, minWidth: 26, textShadow: '0 1px 3px rgba(0,0,0,0.7)' }}>{timeLeft}s</span>
+        </div>
+      </div>
+
+      {/* Bottom scrim: the question and the four answers. Its height is what sets
+          how far down the objects may sit — see FILL_LOOK_Y in ARStage. */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        padding: '30px 14px calc(env(safe-area-inset-bottom, 0px) + 14px)',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 24%, rgba(0,0,0,0.8) 100%)',
+      }}>
+        <p style={{
+          fontSize: '16px', marginBottom: 12, fontWeight: 500, color: 'white',
+          textShadow: '0 1px 4px rgba(0,0,0,0.75)',
+        }}>From your perspective, the circle is _______ the square.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {shuffledOptions.map(option => (
             <button key={option} onClick={() => handleSelect(option)} disabled={localShowFeedback || selectedAnswer || isPaused} style={getButtonStyle(option)}>{option}</button>
@@ -822,6 +855,7 @@ const TrialScreen = ({ trialNumber, totalTrials, shapeConfig, onResponse, isTime
       </div>
     </div>
   );
+
 };
 
 // Results Screen

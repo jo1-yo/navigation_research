@@ -10,4 +10,4 @@
  * RTs are not directly comparable to earlier batches. Bump this whenever a change
  * could plausibly move accuracy or reaction times.
  */
-export const APP_VERSION = '3d-ar-3';
+export const APP_VERSION = '3d-ar-4';

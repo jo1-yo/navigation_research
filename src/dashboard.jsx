@@ -8,7 +8,7 @@
  * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY when they are set at build time,
  * otherwise from a connect form whose values live in localStorage.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { readAll as readLocal, counts as localCounts, clearAll as clearLocal } from './lib/localStore.js';
 
@@ -227,6 +227,9 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState({ participant: null, session: null });
   const [reloadToken, setReloadToken] = useState(0);
+  // Set when a failed remote read dropped us onto the on-device mirror, so the
+  // header can say why the numbers below are not the hosted project's.
+  const [fellBackFrom, setFellBackFrom] = useState(null);
 
   const client = useMemo(
     () => (cfg ? createClient(cfg.url, cfg.key) : null),
@@ -270,6 +273,19 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [client, reloadToken, source]);
 
+  // A dead backend used to leave this screen as nothing but an error card: no
+  // stats, no table, Export CSV disabled — unusable, even though every one of
+  // those runs is still sitting in this browser's mirror. Fall back to it
+  // automatically (once, so the Supabase tab stays usable for a retry).
+  const autoFellBack = useRef(false);
+  useEffect(() => {
+    if (autoFellBack.current) return;
+    if (source !== 'supabase' || remoteStatus !== 'error') return;
+    autoFellBack.current = true;
+    setFellBackFrom(error);
+    setSource('device');
+  }, [source, remoteStatus, error]);
+
   const load = useCallback(() => {
     if (source === 'supabase') setRemoteStatus('loading');
     setReloadToken((t) => t + 1);
@@ -278,6 +294,7 @@ export default function Dashboard() {
   const switchSource = useCallback((next) => {
     setSelected({ participant: null, session: null });
     setError(null);
+    setFellBackFrom(null);
     if (next === 'supabase') setRemoteStatus('loading');
     setSource(next);
   }, []);
@@ -477,6 +494,19 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {fellBackFrom && source === 'device' && (
+        <div className="card warn">
+          <strong>The hosted project could not be read, so this is what this device recorded.</strong>
+          <p className="muted small" style={{ marginTop: 4 }}>{fellBackFrom}</p>
+          <p className="muted small" style={{ marginTop: 4 }}>
+            {/failed to fetch|networkerror|load failed|enotfound/i.test(fellBackFrom || '')
+              ? 'The project could not be reached at all — a free Supabase project is paused after about a week idle and stops resolving until you restore it.'
+              : 'Check the URL and anon key, and that RLS allows SELECT for the anon role.'}{' '}
+            Runs from other devices are not here — they are on those devices.
+          </p>
+        </div>
+      )}
+
       {source === 'device' && (
         <div className="card note">
           Every session is written to this browser as it runs, so nothing is lost when
@@ -490,9 +520,22 @@ export default function Dashboard() {
         <div className="card error">
           <strong>Could not load data.</strong>
           <p>{error}</p>
-          <p className="muted small">
-            Check the URL and anon key, and that RLS allows SELECT for the anon role.
-          </p>
+          {/* A host that cannot be reached at all is almost always a paused project
+              (free Supabase projects pause after ~a week idle and their subdomain
+              stops resolving), not a credentials problem — say so, because the
+              experiment keeps "working" while writing nowhere. */}
+          {/failed to fetch|networkerror|load failed|enotfound/i.test(error || '') ? (
+            <p className="muted small">
+              The project could not be reached at all. Free Supabase projects are paused
+              after about a week idle and stop resolving until you restore them — check
+              supabase.com/dashboard. Runs collected meanwhile are on the participants&rsquo;
+              devices, under the <strong>This device</strong> tab.
+            </p>
+          ) : (
+            <p className="muted small">
+              Check the URL and anon key, and that RLS allows SELECT for the anon role.
+            </p>
+          )}
         </div>
       )}
 

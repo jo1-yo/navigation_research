@@ -7,6 +7,9 @@ import * as THREE from 'three';
  * Two variants:
  *
  * "trial"  — the square + circle pair at real depths in front of the participant.
+ *            With `fill`, the camera view is the whole screen and the question /
+ *            answers float on top of it, so the objects render as large as the
+ *            phone allows instead of inside a small square.
  *            When a compass heading and an anchor bearing are supplied, the pair is
  *            anchored to that real-world bearing: the scene's -Z axis IS the block's
  *            target direction, and the camera yaws opposite the device, so turning
@@ -43,9 +46,13 @@ const MID_Z = -3.1;
 // has to read both shapes to answer, so occlusion is a defect, not a depth cue.
 const CAMERA_Y = 0.95;
 
-// Lateral offset for the left/right slots.
-const SIDE_X = 0.9;
-const DIAG_X = 0.78;
+// Lateral offset for the left/right slots. Full-bleed framing is narrower than the
+// old square (a phone screen is much taller than it is wide), so the pair is pulled
+// in to keep both objects — and their outer edges — comfortably inside the frame at
+// FILL_H_FOV. Their positions as a FRACTION of the frame are close to what the
+// square showed; the objects themselves are what got bigger.
+const SIDE_X = 0.85;
+const DIAG_X = 0.40;
 
 // Objects sit below eye level, so nearer ones also fall lower in the frame —
 // the same cue you get looking down at two things on the floor in front of you.
@@ -57,9 +64,18 @@ const GROUND_Y = -1.15;
 const CUBE_SIDE = 0.62;
 const SPHERE_R = 0.32;
 
-// Downward pitch of the resting view — matches the old lookAt(0, OBJECT_Y, MID_Z)
-// framing so the anchored and fallback modes compose the scene identically.
-const BASE_PITCH = -Math.atan2(CAMERA_Y - OBJECT_Y, -MID_Z);
+// Horizontal field of view, in degrees. It is the HORIZONTAL angle that is locked
+// and the vertical that follows the container's aspect, so the pair frames the same
+// way on any phone and never slides off the sides of a tall screen. A square
+// container at 60° reproduces the original framing exactly.
+const SQUARE_H_FOV = 60;
+// Narrower on the full-bleed screen: less angle across the same (wider) canvas is
+// what makes the objects render ~1.5x larger than they did in the 320px square.
+const FILL_H_FOV = 50;
+
+// Where the resting view looks. Full-bleed drops the aim a little further down so
+// the pair sits above the answer panel rather than behind it.
+const FILL_LOOK_Y = OBJECT_Y - 0.22;
 
 // How far the scene shifts when the phone is tilted, in fallback mode only.
 // In anchored mode rotation IS the parallax, so the positional shim is off.
@@ -139,6 +155,7 @@ export default function ARStage({
   anchorBearing = null,
   variant = 'trial',
   aligned = false,
+  fill = false,
 }) {
   const mountRef = useRef(null);
   const videoRef = useRef(null);
@@ -192,7 +209,9 @@ export default function ARStage({
 
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    const hFov = fill ? FILL_H_FOV : SQUARE_H_FOV;
+    const lookY = fill ? FILL_LOOK_Y : OBJECT_Y;
+    const camera = new THREE.PerspectiveCamera(hFov, 1, 0.1, 100);
     camera.position.set(0, CAMERA_Y, 0);
     camera.rotation.order = 'YXZ';
 
@@ -217,7 +236,7 @@ export default function ARStage({
       facingMat: null,
       // Orient mode looks straight ahead — the arrows stand at eye level, so the
       // participant just holds the phone up. Trials keep the slight downward gaze.
-      basePitch: variant === 'trial' ? BASE_PITCH : 0,
+      basePitch: variant === 'trial' ? -Math.atan2(CAMERA_Y - lookY, -MID_Z) : 0,
       // Sensor pose targets, eased toward in the animate loop.
       yaw: { current: 0, target: 0, initialized: false },
       pitch: { current: 0, target: 0 },
@@ -297,6 +316,12 @@ export default function ARStage({
       if (!w || !h) return;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
+      // Keep the HORIZONTAL angle fixed and derive the vertical one. Three.js's
+      // fov is vertical, so on a tall phone a fixed vertical fov would squeeze the
+      // horizontal frame down to ~30° and throw the side objects off-screen.
+      camera.fov = THREE.MathUtils.radToDeg(
+        2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hFov) / 2) / camera.aspect)
+      );
       camera.updateProjectionMatrix();
     };
     resize();
@@ -322,7 +347,7 @@ export default function ARStage({
         // Fallback: device-locked framing with the positional tilt parallax.
         camera.position.x += (rig.parallax.x - camera.position.x) * 0.12;
         camera.position.y += (CAMERA_Y + rig.parallax.y - camera.position.y) * 0.12;
-        camera.lookAt(0, OBJECT_Y, MID_Z);
+        camera.lookAt(0, lookY, MID_Z);
       }
 
       // Compass needle: yaw.current is the eased signed heading error (facing −
@@ -343,7 +368,7 @@ export default function ARStage({
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, [variant]);
+  }, [variant, fill]);
 
   // ── world anchoring: feed the sensor yaw target ──
   useEffect(() => {
@@ -404,15 +429,20 @@ export default function ARStage({
   return (
     <div
       style={{
-        // Capped against the viewport height so the square never pushes the
-        // controls below it off a phone screen (the app shell is a fixed 100dvh).
-        width: 'min(100%, 38dvh)',
-        maxWidth: 320,
-        aspectRatio: '1 / 1',
-        position: 'relative',
-        margin: '8px auto',
-        flexShrink: 0,
-        borderRadius: 12,
+        // fill: the camera view IS the screen, and the trial chrome floats on top.
+        // Otherwise: a square capped against the viewport height so it never pushes
+        // the controls below it off a phone screen (the shell is a fixed 100dvh).
+        ...(fill
+          ? { position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 0 }
+          : {
+              width: 'min(100%, 38dvh)',
+              maxWidth: 320,
+              aspectRatio: '1 / 1',
+              position: 'relative',
+              margin: '8px auto',
+              flexShrink: 0,
+              borderRadius: 12,
+            }),
         overflow: 'hidden',
         background: cameraError
           ? 'linear-gradient(160deg, #3a4a5a 0%, #222c36 100%)'

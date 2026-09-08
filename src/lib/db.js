@@ -12,6 +12,11 @@
  */
 import supabase from './supabase.js';
 import * as local from './localStore.js';
+import { reportOk, reportFailure, reportUnconfigured } from './dbHealth.js';
+
+// No credentials in this build means there is no remote at all — say so once, up
+// front, rather than letting it look like a healthy setup that writes nowhere.
+if (!supabase) reportUnconfigured();
 
 // ─── participants ─────────────────────────────────────────
 
@@ -31,7 +36,10 @@ export async function upsertParticipant(participantCode, deviceInfo = {}) {
       .eq('participant_code', participantCode)
       .maybeSingle();
 
-    if (selectErr) console.error('[db.upsertParticipant] SELECT failed:', selectErr);
+    if (selectErr) {
+      console.error('[db.upsertParticipant] SELECT failed:', selectErr);
+      reportFailure('upsertParticipant', selectErr);
+    }
 
     if (existing) {
       remote = existing;
@@ -50,6 +58,7 @@ export async function upsertParticipant(participantCode, deviceInfo = {}) {
 
       if (data) {
         remote = data;
+        reportOk();
       } else if (error?.code === '23505') {
         // SELECT-then-INSERT is not atomic: a concurrent call (React StrictMode
         // double-runs mount effects in dev) can insert the row between our two
@@ -60,10 +69,11 @@ export async function upsertParticipant(participantCode, deviceInfo = {}) {
           .select('id, participant_code')
           .eq('participant_code', participantCode)
           .maybeSingle();
-        if (raced) remote = raced;
+        if (raced) { remote = raced; reportOk(); }
         else console.error('[db.upsertParticipant] duplicate-key retry SELECT found nothing');
       } else {
         console.error('[db.upsertParticipant] INSERT failed:', error);
+        reportFailure('upsertParticipant', error);
       }
     }
   }
@@ -96,8 +106,8 @@ export async function createSession({ participantId, version, sessionType }) {
       .select('id')
       .single();
 
-    if (error) console.error('[db.createSession] INSERT failed:', error);
-    else remote = data;
+    if (error) { console.error('[db.createSession] INSERT failed:', error); reportFailure('createSession', error); }
+    else { remote = data; reportOk(); }
   }
 
   const row = local.recordSession({ id: remote?.id, participantId, version, sessionType });
@@ -125,8 +135,8 @@ export async function completeSession(sessionId, { totalCorrect, totalTrials, av
       .select('id')
       .single();
 
-    if (error) console.error('[db.completeSession] Failed to complete session:', sessionId, error);
-    else remote = data;
+    if (error) { console.error('[db.completeSession] Failed to complete session:', sessionId, error); reportFailure('completeSession', error); }
+    else { remote = data; reportOk(); }
   }
 
   const row = local.recordSessionComplete(sessionId, { totalCorrect, totalTrials, avgReactionTimeMs });
@@ -154,8 +164,8 @@ export async function createOrientationBlock({ sessionId, blockOrder, targetDire
       .select('id')
       .single();
 
-    if (error) console.error('[db.createOrientationBlock]', error);
-    else remote = data;
+    if (error) { console.error('[db.createOrientationBlock]', error); reportFailure('createOrientationBlock', error); }
+    else { remote = data; reportOk(); }
   }
 
   const row = local.recordBlock({ id: remote?.id, sessionId, blockOrder, targetDirection });
@@ -182,8 +192,8 @@ export async function updateOrientationBlock(blockId, { finalFacingDirection, or
       .select('id')
       .single();
 
-    if (error) console.error('[db.updateOrientationBlock]', error);
-    else remote = data;
+    if (error) { console.error('[db.updateOrientationBlock]', error); reportFailure('updateOrientationBlock', error); }
+    else { remote = data; reportOk(); }
   }
 
   const row = local.recordBlockUpdate(blockId, {
@@ -223,8 +233,8 @@ export async function getParticipantStats(participantId) {
       .select('session_type, timestamp_start, timestamp_end, total_correct, avg_reaction_time_ms')
       .eq('participant_id', participantId)
       .order('timestamp_start', { ascending: false });
-    if (error) console.error('[db.getParticipantStats]', error);
-    else rows = data;
+    if (error) { console.error('[db.getParticipantStats]', error); reportFailure('getParticipantStats', error); }
+    else { rows = data; reportOk(); }
   }
 
   if (!rows) {
@@ -311,8 +321,10 @@ export async function createTrial({
 
     if (error) {
       console.error('[db.createTrial] Failed to insert trial:', { blockId, trialIndex, correctAnswer }, error);
+      reportFailure('createTrial', error);
     } else {
       remote = data;
+      reportOk();
     }
   }
 
