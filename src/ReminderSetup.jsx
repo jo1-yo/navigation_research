@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { C, T } from './ui/theme.js';
+import { Sheet, Button, Hint, Glyph } from './ui/kit.jsx';
 import {
   pushSupported, needsInstall, isIos, permission,
   enableReminders, showTestNotification, subscriptionState, ensureServiceWorker,
@@ -10,42 +12,46 @@ const DISMISS_KEY = 'nla_reminders_dismissed_v1';
 /**
  * The one place that asks a participant to turn on training reminders.
  *
- * Mounted once in App.jsx rather than inside either experiment version, for two
- * reasons: neither 1000-line file grows a third copy of the same UI, and mount
- * time is the only moment when no trial can possibly be in progress — a sheet
- * that appeared mid-trial would corrupt a reaction time.
+ * Mounted once in App.jsx rather than inside either experiment version: neither
+ * version file grows a copy, and this component never has to know which screen is
+ * showing. It opens on an event instead of a timer, so it can never appear over a
+ * screen the participant is in the middle of — the home screen offers it once per
+ * launch, and the Reminders row in Profile opens it on demand.
  *
- * On iPhone the sheet's whole job is the install step: a web push is delivered
- * only to a home-screen app, so until the participant installs, there is nothing
+ * On iPhone the sheet's whole job is the install step: a web push reaches a
+ * home-screen app and never a Safari tab, so until they install there is nothing
  * to ask permission for.
- *
- * Add ?reminders=1 to the URL to force it open again after dismissing.
  */
 export default function ReminderSetup() {
   const forced = new URLSearchParams(window.location.search).get('reminders') === '1';
-  // ?reminders=1 opens it on the first render rather than through an effect, so
-  // there is no cascading setState on mount.
   const [open, setOpen] = useState(() => forced && pushSupported());
   const [perm, setPerm] = useState(permission());
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [sub, setSub] = useState(subscriptionState());
 
-  // Register the worker on every load (it is also what a push needs to exist at
-  // all) and retry any subscription that could not reach the server earlier.
+  // Register the worker on every load — a push needs it to exist — and retry any
+  // subscription that could not reach the server earlier.
   useEffect(() => {
     if (!pushSupported()) return;
     ensureServiceWorker().then(() => flushPendingSubscription());
   }, []);
 
   useEffect(() => {
-    if (forced || !pushSupported()) return;
-    if (localStorage.getItem(DISMISS_KEY) === '1') return;
-    if (permission() === 'granted' && subscriptionState().subscribed) return;
-    // A beat after load, so it does not fight the first paint.
-    const t = setTimeout(() => setOpen(true), 1200);
-    return () => clearTimeout(t);
-  }, [forced]);
+    if (!pushSupported()) return undefined;
+    const offer = () => {
+      if (localStorage.getItem(DISMISS_KEY) === '1') return;
+      if (permission() === 'granted' && subscriptionState().subscribed) return;
+      setOpen(true);
+    };
+    const openNow = () => { setPerm(permission()); setSub(subscriptionState()); setOpen(true); };
+    window.addEventListener('nla:offer-reminders', offer);
+    window.addEventListener('nla:open-reminders', openNow);
+    return () => {
+      window.removeEventListener('nla:offer-reminders', offer);
+      window.removeEventListener('nla:open-reminders', openNow);
+    };
+  }, []);
 
   if (!open) return null;
 
@@ -61,116 +67,71 @@ export default function ReminderSetup() {
     setPerm(permission());
     setSub(subscriptionState());
     setBusy(false);
-    if (res.ok && res.reason === 'no-vapid-key') {
-      setNote('Permission granted. Scheduled reminders start once the server key is deployed.');
-    } else if (res.ok && res.reason === 'subscribed-not-synced') {
-      setNote('Permission granted. Saved on this device — it will register with the server when it is reachable.');
-    } else if (res.ok) {
-      setNote('Reminders are on.');
-    } else if (res.reason === 'denied') {
-      setNote('Notifications are blocked for this app. Settings › Notifications › NLA to allow them.');
-    } else if (res.reason === 'needs-install') {
-      setNote('Add the app to your home screen first, then open it from there.');
-    } else {
-      setNote(`Could not turn reminders on (${res.reason}).`);
-    }
+    if (res.ok && res.reason === 'no-vapid-key') setNote('Allowed. Scheduled reminders begin once the server is set up.');
+    else if (res.ok && res.reason === 'subscribed-not-synced') setNote('Allowed, and saved on this device. It will register with the server automatically.');
+    else if (res.ok) setNote('Reminders are on.');
+    else if (res.reason === 'denied') setNote('Notifications are off for this app. Settings › Notifications › NLA to allow them.');
+    else if (res.reason === 'needs-install') setNote('Add the app to your home screen first, then open it from there.');
+    else setNote(`Could not turn reminders on (${res.reason}).`);
   };
 
   const install = needsInstall();
   const granted = perm === 'granted';
 
   return (
-    <div style={S.scrim} onClick={dismiss}>
-      <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
-        <div style={S.grabber} />
-        <h3 style={S.title}>{granted ? 'Reminders are on' : 'Get reminded to train'}</h3>
+    <Sheet onClose={dismiss}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ color: C.accent }}><Glyph name="bell" size={28} /></div>
 
-        {install ? (
-          <>
-            <p style={S.body}>
-              On iPhone, reminders only work from the home-screen app. It takes two taps:
-            </p>
-            <ol style={S.steps}>
-              <li>Tap the <strong>Share</strong> button at the bottom of Safari.</li>
-              <li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
-              <li>Open <strong>NLA</strong> from your home screen and turn reminders on there.</li>
-            </ol>
-            <p style={{ ...S.body, color: '#888', fontSize: 13 }}>
-              The app works in Safari too — you just will not get reminders.
-            </p>
-          </>
-        ) : granted ? (
-          <>
-            <p style={S.body}>
-              {sub.subscribed
-                ? 'This device is registered for training reminders.'
-                : 'Notifications are allowed on this device.'}
-              {sub.subscribed && !sub.synced && ' It has not reached the server yet — it will retry automatically.'}
-            </p>
-            <button
-              style={S.secondary}
-              onClick={async () => { setNote((await showTestNotification()) ? 'Test reminder sent.' : 'Could not send a test reminder.'); }}
-            >
-              Send a test reminder
-            </button>
-          </>
-        ) : (
-          <>
-            <p style={S.body}>
-              You will train a few times a day. Turn on reminders and a tap on the
-              notification opens the app right where you left off — no signing in.
-            </p>
-            <button style={S.primary} disabled={busy} onClick={onEnable}>
-              {busy ? 'Just a moment…' : 'Turn on reminders'}
-            </button>
-          </>
+        <div>
+          <h3 style={{ ...T.title3, margin: 0 }}>
+            {granted ? 'Reminders are on' : install ? 'Add NLA to your home screen' : 'Training reminders'}
+          </h3>
+          <p style={{ ...T.subhead, color: C.secondary, margin: '4px 0 0' }}>
+            {granted
+              ? 'A reminder each morning for training, and one on Saturday for the weekly test.'
+              : install
+                ? 'On iPhone, reminders only work from the home-screen app. Two taps:'
+                : 'One each morning for training, one on Saturday for the weekly test. Tapping it opens the app already signed in.'}
+          </p>
+        </div>
+
+        {install && (
+          <ol style={{ ...T.subhead, color: C.label, margin: 0, paddingLeft: 22, lineHeight: 1.9 }}>
+            <li>Tap <strong>Share</strong> at the bottom of Safari.</li>
+            <li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+            <li>Open <strong>NLA</strong> from your home screen.</li>
+          </ol>
         )}
 
-        {note && <p style={S.note}>{note}</p>}
+        {note && <Hint tint={/could not|off for this app|first/i.test(note) ? C.red : C.green}>{note}</Hint>}
 
-        <button style={S.ghost} onClick={dismiss}>
-          {install || granted ? 'Done' : 'Not now'}
-        </button>
+        {!install && !granted && (
+          <Button onClick={onEnable} disabled={busy}>
+            {busy ? 'One moment…' : 'Turn on reminders'}
+          </Button>
+        )}
 
-        {!isIos() && !install && (
-          <p style={{ ...S.body, color: '#aaa', fontSize: 12, marginTop: 4 }}>
-            Installing this app to your home screen makes reminders more reliable.
-          </p>
+        {granted && (
+          <Button
+            variant="tinted"
+            onClick={async () => setNote((await showTestNotification())
+              ? 'Sent. Leave the app to see it appear.'
+              : 'Could not send a test reminder.')}
+          >
+            Send a test reminder
+          </Button>
+        )}
+
+        <Button variant="plain" onClick={dismiss}>{install || granted ? 'Done' : 'Not now'}</Button>
+
+        {install && (
+          <Hint>The trials work in Safari too — you just will not get reminders.</Hint>
+        )}
+        {!install && !isIos() && (
+          <Hint>{sub.subscribed && !sub.synced ? 'Saved on this device; it will register with the server automatically.' : 'Installing the app to your home screen makes reminders more reliable.'}</Hint>
         )}
       </div>
-    </div>
+    </Sheet>
   );
 }
-
-const S = {
-  scrim: {
-    position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.45)',
-    display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-    fontFamily: '"DM Sans", -apple-system, sans-serif',
-  },
-  sheet: {
-    background: 'white', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 500,
-    padding: '20px 24px calc(env(safe-area-inset-bottom, 0px) + 24px)',
-    maxHeight: '86dvh', overflowY: 'auto',
-  },
-  grabber: { width: 40, height: 4, borderRadius: 2, background: '#ddd', margin: '0 auto 16px' },
-  title: { fontSize: 19, fontWeight: 600, marginBottom: 10, color: '#1a1a2e' },
-  body: { fontSize: 15, lineHeight: 1.6, color: '#444', marginBottom: 14 },
-  steps: { fontSize: 15, lineHeight: 1.9, color: '#444', margin: '0 0 14px 20px' },
-  primary: {
-    width: '100%', padding: 16, background: '#E67E22', color: 'white', border: 'none',
-    borderRadius: 10, fontSize: 16, fontWeight: 500, cursor: 'pointer',
-  },
-  secondary: {
-    width: '100%', padding: 14, background: 'white', color: '#1a1a2e',
-    border: '1px solid #ddd', borderRadius: 10, fontSize: 15, cursor: 'pointer',
-  },
-  ghost: {
-    width: '100%', padding: 13, background: 'transparent', color: '#888',
-    border: 'none', borderRadius: 10, fontSize: 15, cursor: 'pointer', marginTop: 10,
-  },
-  note: {
-    fontSize: 13, lineHeight: 1.5, color: '#2e7d32', background: '#f1f8f2',
-    border: '1px solid #cfe6d3', borderRadius: 8, padding: '10px 12px', marginTop: 12,
-  },
-};

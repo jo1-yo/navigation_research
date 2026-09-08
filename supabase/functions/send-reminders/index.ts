@@ -5,7 +5,8 @@
  * Notification Triggers API — so every reminder has to leave from here at the
  * right moment. pg_cron calls this function every 30 minutes (see cron.sql); the
  * function works out which participants are inside a reminder slot in THEIR OWN
- * timezone and pushes only to those.
+ * timezone — one training reminder each morning, one test reminder each week —
+ * and pushes only to those.
  *
  * Deploy:
  *   supabase secrets set VAPID_KEYS_JSON="$(cat vapid.json)" VAPID_SUBJECT=mailto:you@example.edu
@@ -18,9 +19,15 @@
 import * as webpush from 'jsr:@negrel/webpush@^0.3';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-// Local times, per participant timezone, at which a reminder goes out. Four a day
-// matches the "4 sessions today" target on the training screen.
-const SLOTS = ['09:00', '12:30', '16:00', '19:30'];
+// One reminder a day for training, one a week for the test — in each
+// participant's own local time, which is why the schedule is evaluated per
+// subscription rather than by the cron expression.
+const TRAINING = { time: '09:00' };
+// The weekly test reminder deliberately sits in the evening, far from the 09:00
+// training one: a subscription carries a single last_sent_at, so two reminders a
+// few hours apart would have the second suppressed by the gap rule below.
+// weekday: 6 = Saturday, when the weekly test is due.
+const TEST = { weekday: 6, time: '09:00' };
 
 // How close to a slot the cron tick has to land. The cron runs every 30 minutes,
 // so a 30-minute window means each slot fires exactly once.
@@ -28,16 +35,21 @@ const WINDOW_MINUTES = 30;
 
 // Never push twice to the same device inside this many hours, whatever the cron
 // does — a retried or double-scheduled tick must not spam a participant.
-const MIN_GAP_HOURS = 3;
+const MIN_GAP_HOURS = 6;
 
-// Sessions a participant has to finish before reminders stop for the day.
-const SESSIONS_PER_DAY = 4;
+// A training reminder is pointless once the participant has trained today; a test
+// reminder is pointless if they took the test within the last week.
+const TEST_EVERY_DAYS = 7;
 
-const MESSAGES = [
-  { title: 'Time for a training session', body: 'A set of 12 trials takes about five minutes.' },
-  { title: 'Ready for the next set?', body: 'Tap to pick up where you left off.' },
-  { title: 'Training reminder', body: 'Stand somewhere you can turn around freely, then tap to start.' },
-];
+const MESSAGES = {
+  training: [
+    { title: 'Time for today\'s training', body: 'Twelve trials, about five minutes.' },
+    { title: 'Training reminder', body: 'Stand somewhere you can turn around freely, then tap to start.' },
+  ],
+  test: [
+    { title: 'Weekly test is ready', body: 'Same format as training, without feedback. About five minutes.' },
+  ],
+};
 
 function minutesOfDay(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
@@ -56,14 +68,14 @@ function localParts(timezone: string, now: Date) {
     date = now.toLocaleDateString('en-CA', { timeZone: 'UTC' });
   }
   const [h, m] = time.split(':').map(Number);
-  return { minutes: h * 60 + m, date };
+  // Weekday in the participant's zone, not the server's.
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return { minutes: h * 60 + m, date, weekday };
 }
 
-function inASlot(minutes: number): boolean {
-  return SLOTS.some((slot) => {
-    const delta = minutes - minutesOfDay(slot);
-    return delta >= 0 && delta < WINDOW_MINUTES;
-  });
+function atSlot(minutes: number, time: string): boolean {
+  const delta = minutes - minutesOfDay(time);
+  return delta >= 0 && delta < WINDOW_MINUTES;
 }
 
 Deno.serve(async (req) => {
@@ -91,23 +103,28 @@ Deno.serve(async (req) => {
   const idByCode = new Map((participants ?? []).map((p) => [p.participant_code, p.id]));
   const { data: sessions } = await supabase
     .from('sessions')
-    .select('participant_id, timestamp_start, timestamp_end')
+    .select('participant_id, session_type, timestamp_start, timestamp_end')
     .not('timestamp_end', 'is', null)
-    .gte('timestamp_start', new Date(now.getTime() - 48 * 3600 * 1000).toISOString());
+    // Far enough back to answer both "trained today?" and "tested this week?".
+    .gte('timestamp_start', new Date(now.getTime() - (TEST_EVERY_DAYS + 1) * 86400_000).toISOString());
 
   const appServer = await webpush.ApplicationServer.new({
     contactInformation: Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@example.edu',
     vapidKeys: await webpush.importVapidKeys(JSON.parse(Deno.env.get('VAPID_KEYS_JSON')!)),
   });
 
-  const sent: string[] = [];
+  const sent: { id: string; kind: string }[] = [];
   const skipped: Record<string, number> = {};
   const bump = (why: string) => { skipped[why] = (skipped[why] ?? 0) + 1; };
 
   for (const sub of subs ?? []) {
-    const { minutes, date } = localParts(sub.timezone, now);
+    const { minutes, date, weekday } = localParts(sub.timezone, now);
 
-    if (!inASlot(minutes)) { bump('outside-slot'); continue; }
+    // Which reminder, if any, is due right now for this participant?
+    let kind: 'training' | 'test' | null = null;
+    if (weekday === TEST.weekday && atSlot(minutes, TEST.time)) kind = 'test';
+    else if (atSlot(minutes, TRAINING.time)) kind = 'training';
+    if (!kind) { bump('outside-slot'); continue; }
 
     if (sub.last_sent_at &&
         now.getTime() - new Date(sub.last_sent_at).getTime() < MIN_GAP_HOURS * 3600 * 1000) {
@@ -116,26 +133,35 @@ Deno.serve(async (req) => {
 
     const pid = sub.participant_code ? idByCode.get(sub.participant_code) : null;
     if (pid) {
-      const doneToday = (sessions ?? []).filter((s) =>
-        s.participant_id === pid &&
-        localParts(sub.timezone, new Date(s.timestamp_start)).date === date
-      ).length;
-      if (doneToday >= SESSIONS_PER_DAY) { bump('done-for-today'); continue; }
+      const mine = (sessions ?? []).filter((s) => s.participant_id === pid);
+      if (kind === 'training') {
+        // Already trained today, in their own calendar day.
+        const today = mine.some((s) =>
+          s.session_type === 'training' &&
+          localParts(sub.timezone, new Date(s.timestamp_start)).date === date);
+        if (today) { bump('trained-today'); continue; }
+      } else {
+        const cutoff = now.getTime() - TEST_EVERY_DAYS * 86400_000;
+        const recent = mine.some((s) =>
+          s.session_type === 'testing' && new Date(s.timestamp_start).getTime() >= cutoff);
+        if (recent) { bump('tested-this-week'); continue; }
+      }
     }
 
-    if (dryRun) { sent.push(sub.id); continue; }
+    if (dryRun) { sent.push({ id: sub.id, kind }); continue; }
 
-    const message = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+    const pool = MESSAGES[kind];
+    const message = pool[Math.floor(Math.random() * pool.length)];
     try {
       const subscriber = appServer.subscribe({
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       });
       await subscriber.pushTextMessage(
-        JSON.stringify({ ...message, tag: 'nla-reminder', url: './' }),
+        JSON.stringify({ ...message, tag: `nla-${kind}`, url: './' }),
         {},
       );
-      sent.push(sub.id);
+      sent.push({ id: sub.id, kind });
       await supabase
         .from('push_subscriptions')
         .update({ last_sent_at: now.toISOString(), updated_at: now.toISOString() })
@@ -157,5 +183,12 @@ Deno.serve(async (req) => {
     }
   }
 
-  return Response.json({ now: now.toISOString(), dryRun, sent: sent.length, skipped });
+  return Response.json({
+    now: now.toISOString(),
+    dryRun,
+    sent: sent.length,
+    training: sent.filter((s) => s.kind === 'training').length,
+    test: sent.filter((s) => s.kind === 'test').length,
+    skipped,
+  });
 });

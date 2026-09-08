@@ -55,7 +55,7 @@ export function haptic(type) {
     try {
       navigator.vibrate(PATTERNS[type] || PATTERNS.selection);
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -106,7 +106,7 @@ export function playSound(type) {
     }
 
     setTimeout(() => ctx.close(), 500);
-  } catch (e) { /* silent */ }
+  } catch { /* silent */ }
 }
 
 /**
