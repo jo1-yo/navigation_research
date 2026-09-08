@@ -1,4 +1,4 @@
-import { C, T, R, SP, SAFE, FONT } from './theme.js';
+import { C, T, R, SP, SAFE, FONT, CONTENT_MAX } from './theme.js';
 
 /**
  * The shared UI kit. Both experiment versions render through these, so a change
@@ -65,21 +65,33 @@ export function Screen({ children, center = false, grouped = false, pad = true, 
       style={{
         flex: '1 1 auto',
         minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: center ? 'center' : 'flex-start',
-        gap: SP.gap,
-        padding: pad ? `${SP.gutter}px ${SP.gutter}px 24px` : 0,
-        paddingTop: top ? `calc(${SAFE.top} + ${pad ? SP.gutter : 0}px)` : undefined,
-        paddingBottom: `calc(${SAFE.bottom} + 24px)`,
         overflowY: scroll ? 'auto' : 'hidden',
         WebkitOverflowScrolling: 'touch',
         background: grouped ? C.grouped : C.bg,
         color: C.label,
         fontFamily: FONT,
+        // The scroller fills the window; the content inside it is a centred column.
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
-      {children}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: CONTENT_MAX,
+          margin: '0 auto',
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: center ? 'center' : 'flex-start',
+          gap: SP.gap,
+          padding: pad ? `${SP.gutter}px ${SP.gutter}px 24px` : 0,
+          paddingTop: top ? `calc(${SAFE.top} + ${pad ? SP.gutter : 0}px)` : undefined,
+          paddingBottom: `calc(${SAFE.bottom} + 24px)`,
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -95,7 +107,10 @@ export function NavBar({ title, left, right, border = true }) {
         borderBottom: border ? `0.5px solid ${C.separator}` : 'none',
       }}
     >
-      <div style={{ height: SP.tap, display: 'flex', alignItems: 'center', padding: `0 ${SP.gutter - 8}px`, position: 'relative' }}>
+      <div style={{
+        height: SP.tap, display: 'flex', alignItems: 'center', position: 'relative',
+        width: '100%', maxWidth: CONTENT_MAX, margin: '0 auto', padding: `0 ${SP.gutter - 8}px`,
+      }}>
         <div style={{ width: 64, display: 'flex', justifyContent: 'flex-start' }}>{left}</div>
         <div style={{ flex: 1, textAlign: 'center', ...T.headline, color: C.label }}>{title}</div>
         <div style={{ width: 64, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
@@ -119,7 +134,6 @@ export function TabBar({ active, onChange, tabs }) {
     <div
       style={{
         flexShrink: 0,
-        display: 'flex',
         borderTop: `0.5px solid ${C.separator}`,
         background: 'rgba(255,255,255,0.94)',
         backdropFilter: 'blur(20px)',
@@ -127,6 +141,7 @@ export function TabBar({ active, onChange, tabs }) {
         paddingBottom: SAFE.bottom,
       }}
     >
+      <div style={{ display: 'flex', width: '100%', maxWidth: CONTENT_MAX, margin: '0 auto' }}>
       {tabs.map((tab) => {
         const on = active === tab.id;
         return (
@@ -145,6 +160,7 @@ export function TabBar({ active, onChange, tabs }) {
           </button>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -297,7 +313,7 @@ export function Sheet({ children, onClose }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: 500, background: C.bg,
+          width: '100%', maxWidth: CONTENT_MAX + 60, background: C.bg,
           borderRadius: `${R.sheet}px ${R.sheet}px 0 0`,
           padding: `10px ${SP.gutter + 4}px calc(${SAFE.bottom} + 20px)`,
           maxHeight: '88dvh', overflowY: 'auto',

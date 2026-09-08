@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { C, T, R, SP, SAFE, FONT } from './theme.js';
+import { C, T, R, SP, SAFE, FONT, CONTENT_MAX } from './theme.js';
 import { NavBar, IconButton, Button, Glyph, Hint, Screen } from './kit.jsx';
 import ARStage from '../ARStage.jsx';
 import { feedbackCorrect, feedbackWrong } from '../haptics.js';
@@ -233,9 +233,10 @@ export function TrialScreen({
           opts back in. */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none',
-        padding: `calc(${SAFE.top} + 6px) ${SP.gutter}px 22px`,
+        padding: `calc(${SAFE.top} + 6px) 0 22px`,
         background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0) 100%)',
       }}>
+        <div style={{ width: '100%', maxWidth: CONTENT_MAX, margin: '0 auto', padding: `0 ${SP.gutter}px` }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: SP.tap }}>
           <span style={{ ...T.footnote, color: C.onDark, fontVariantNumeric: 'tabular-nums' }}>
             Trial {trialNumber} of {totalTrials}
@@ -256,22 +257,25 @@ export function TrialScreen({
             fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right',
           }}>{timeLeft}</span>
         </div>
+        </div>
       </div>
 
       {/* Bottom: the question and the four answers. Its height sets how far down
           the objects may sit — see FILL_LOOK_Y in ARStage. */}
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
-        padding: `32px ${SP.gutter - 4}px calc(${SAFE.bottom} + 14px)`,
+        padding: `32px 0 calc(${SAFE.bottom} + 14px)`,
         background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 26%, rgba(0,0,0,0.78) 100%)',
       }}>
-        <p style={{ ...T.headline, color: C.onDark, margin: `0 4px 12px` }}>{question}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ width: '100%', maxWidth: CONTENT_MAX, margin: '0 auto', padding: `0 ${SP.gutter}px` }}>
+        <p style={{ ...T.headline, color: C.onDark, margin: `0 0 12px` }}>{question}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {shuffled.map((option) => (
             <button key={option} onClick={() => choose(option)} disabled={feedbackShown || selected !== null || isPaused} style={optionStyle(option)}>
               {option}
             </button>
           ))}
+        </div>
         </div>
       </div>
     </div>

@@ -60,8 +60,19 @@ export const T = {
 
 export const R = { control: 12, card: 12, sheet: 22, pill: 999 };
 
-// 16pt gutters, 44pt minimum touch target — both straight out of the HIG.
-export const SP = { gutter: 16, gap: 12, tap: 44 };
+// 20pt gutters, 44pt minimum touch target. The HIG's own margin is 16, but this
+// app's screens are mostly one column of text and one button, and at 16 they read
+// as pressed against both edges.
+export const SP = { gutter: 20, gap: 12, tap: 44 };
+
+/**
+ * Content never spans more than this, and is centred when the window is wider.
+ * On a phone that is every pixel minus the gutters; on a laptop or an iPad it
+ * becomes a single centred column instead of a band stretched across the display.
+ * 420 is roughly the widest iPhone, so the phone layout is the design target and
+ * everything wider just gets margins.
+ */
+export const CONTENT_MAX = 420;
 
 /**
  * Safe-area helpers. The app runs with viewport-fit=cover and a translucent
