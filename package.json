@@ -7,12 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "vite build && cd dist && rm -rf .git && git init -b gh-pages && git add -A && git commit -m deploy && git push -f https://github.com/jo1-yo/navigation_research.git gh-pages && cd .. && rm -rf dist/.git",
+    "check:db": "node scripts/check-db.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

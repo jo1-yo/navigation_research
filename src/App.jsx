@@ -1,17 +1,30 @@
 import { useState } from "react";
 import NavigationLearningAppEGO from "./nla-ego-version.jsx";
 import NavigationLearningAppALLO from "./nla-allo-version.jsx";
+import Dashboard from "./dashboard.jsx";
+import RemoteStatus from "./RemoteStatus.jsx";
+import ReminderSetup from "./ReminderSetup.jsx";
+
+// Researcher view lives at ?view=dashboard — deliberately not linked from the
+// participant UI so nobody stumbles into it mid-experiment.
+function wantsDashboard() {
+  return new URLSearchParams(window.location.search).get("view") === "dashboard";
+}
 
 export default function App() {
   const [version, setVersion] = useState(() => localStorage.getItem('nla_version') || null);
+
+  if (wantsDashboard()) return <Dashboard />;
 
   const handleSetVersion = (v) => {
     localStorage.setItem('nla_version', v);
     setVersion(v);
   };
 
-  if (version === "ego") return <NavigationLearningAppEGO onSwitchVersion={handleSetVersion} />;
-  if (version === "allo") return <NavigationLearningAppALLO onSwitchVersion={handleSetVersion} />;
+  // The banner is mounted alongside the experiment rather than inside it, so both
+  // versions get it without either 1000-line file growing another copy.
+  if (version === "ego") return <><RemoteStatus /><ReminderSetup /><NavigationLearningAppEGO onSwitchVersion={handleSetVersion} /></>;
+  if (version === "allo") return <><RemoteStatus /><ReminderSetup /><NavigationLearningAppALLO onSwitchVersion={handleSetVersion} /></>;
 
   return (
     <div style={{

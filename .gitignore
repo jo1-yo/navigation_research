@@ -25,3 +25,6 @@ dist-ssr
 *.sw?
 .Rhistory
 .DS_Store
+
+# Web push private key — never commit
+vapid.json
