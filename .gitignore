@@ -28,3 +28,6 @@ dist-ssr
 
 # Web push private key — never commit
 vapid.json
+
+# Supabase CLI scratch state
+supabase/.temp/
