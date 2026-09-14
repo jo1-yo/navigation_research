@@ -139,8 +139,9 @@ npm run build
 npm run preview
 ```
 
-Copy the Supabase URL and anon key into `.env` (gitignored) before running — without
-them the app runs, but stores data only on the device.
+Copy `.env.example` to `.env` (gitignored) and fill in the Supabase URL and anon key
+before running — without them the app still runs, but stores data only on the device.
+The VAPID keys in the same file are only needed if you are working on push reminders.
 
 Testing on a real phone needs HTTPS, because the camera and compass APIs are not
 available on a plain-HTTP origin. Tunnel the dev server:
