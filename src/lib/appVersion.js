@@ -7,7 +7,10 @@
  * device-locked (the array followed the camera). "3d-ar-2" anchors the array to the
  * block's real-world target bearing and adds the AR alignment arrows. "3d-ar-3"
  * measures reaction time on a monotonic clock and excludes paused spans, so its
- * RTs are not directly comparable to earlier batches. Bump this whenever a change
- * could plausibly move accuracy or reaction times.
+ * RTs are not directly comparable to earlier batches. "3d-ar-5" puts the posture
+ * figure back on the orientation screen, so participants are reminded how to hold
+ * the phone at the start of every block rather than only once in the instructions —
+ * a steadier posture changes what they see through the camera. Bump this whenever a
+ * change could plausibly move accuracy or reaction times.
  */
-export const APP_VERSION = '3d-ar-4';
+export const APP_VERSION = '3d-ar-5';

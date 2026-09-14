@@ -59,10 +59,25 @@ export function OrientationScreen({
         right={<IconButton name="pause" onClick={onPause} label="Pause" />}
       />
       <Screen top={false}>
-        <p style={{ ...T.subhead, color: C.secondary, margin: 0, textAlign: 'center' }}>
-          Hold the phone upright in front of you and turn your body until the dark
-          arrow lines up with the green one.
-        </p>
+        {/* The posture figure rides along with the instruction rather than sitting
+            above it: this screen already spends 38dvh on the AR square, and a
+            full-width image pushed Continue under the fold on a small phone.
+            Participants have seen it full size on the instructions screen — here
+            it only has to remind them the phone stays upright, arm bent. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img
+            src={`${import.meta.env.BASE_URL}ins.png`}
+            alt="Standing upright, phone held in front of you, elbow bent at 90 degrees"
+            style={{
+              height: 104, width: 'auto', flex: '0 0 auto',
+              borderRadius: R.card, objectFit: 'contain',
+            }}
+          />
+          <p style={{ ...T.subhead, color: C.secondary, margin: 0 }}>
+            Hold the phone upright in front of you and turn your body until the dark
+            arrow lines up with the green one.
+          </p>
+        </div>
 
         <ARStage
           variant="orient"
